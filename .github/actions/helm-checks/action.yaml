@@ -51,7 +51,7 @@ runs:
     # their entrypoint as root before dropping privilege, so a hard-fail policy here
     # would block legitimate deploys over conditions we can't fix in our own templates.
     - name: Trivy config scan (staging, report only)
-      uses: aquasecurity/trivy-action@0.36.0
+      uses: aquasecurity/trivy-action@v0.36.0
       with:
         scan-type: config
         scan-ref: /tmp/enact-wp-staging.rendered.yaml
