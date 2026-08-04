@@ -4,6 +4,12 @@
 # nested mysql subchart). Meant as a clear starting point for commandline
 # deployment or CI based deployment.
 #
+# NAMESPACE must already exist (see README.md's one-time setup step) --
+# deliberately no --create-namespace here. The CI service account's RBAC is
+# scoped to work *inside* a namespace only, not to create namespaces at the
+# cluster scope, so passing --create-namespace would fail under it even when
+# the namespace already exists (helm issues the create call unconditionally).
+#
 # HELM_EXTRA_ARGS: any additional arguments you'd like passed to helm upgrade
 # directly, e.g. `--values ops/staging-values.yaml`.
 
@@ -21,6 +27,5 @@ helm upgrade \
     --timeout 15m0s \
     $HELM_EXTRA_ARGS \
     --namespace="$namespace" \
-    --create-namespace \
     "$release_name" \
     ./wordpress
