@@ -83,7 +83,8 @@ resulting `KUBECONFIG_FILE` secret here) only need to run once per namespace.
 Your boss (or anyone with deploy access) can lift the login requirement for an
 environment independently of anything above -- it's just a Helm value:
 
-1. In `ops/staging-values.yaml` or `ops/production-values.yaml`, add:
+1. In `ops/staging-values.yaml` or `ops/production-values.yaml`, change
+   `privateSite.enabled` to `false`:
    ```yaml
    privateSite:
      enabled: false

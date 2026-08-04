@@ -7,3 +7,6 @@ ingress:
 
 externalSecret:
   onePasswordItem: wordpress-mysql-staging-enact
+
+privateSite:
+  enabled: true
