@@ -1,0 +1,17 @@
+suite: wordpress required values
+tests:
+  - it: fails to render without ingress.hostname
+    set:
+      ingress.hostname: ""
+      externalSecret.onePasswordItem: test-item
+    asserts:
+      - failedTemplate:
+          errorMessage: "ingress.hostname is required"
+
+  - it: fails to render without externalSecret.onePasswordItem
+    set:
+      ingress.hostname: example.test
+      externalSecret.onePasswordItem: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "externalSecret.onePasswordItem is required"

@@ -2,25 +2,15 @@ name: "Lint"
 run-name: Lint of ${{ github.ref_name }} by @${{ github.actor }}
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
 
 jobs:
-  helm-lint:
+  helm-checks:
     runs-on: ubuntu-latest
     container: dtzar/helm-kubectl:3.9.4
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-      - name: helm lint (staging values)
-        run: helm lint ./wordpress --values ops/staging-values.yaml
-      - name: helm lint (production values)
-        run: helm lint ./wordpress --values ops/production-values.yaml
-      - name: helm template (staging values)
-        run: helm template enact-wp-staging ./wordpress --values ops/staging-values.yaml
-      - name: helm template (production values)
-        run: helm template enact-wp-production ./wordpress --values ops/production-values.yaml
+      - uses: ./.github/actions/helm-checks

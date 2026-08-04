@@ -1,6 +1,13 @@
 name: "Deploy"
-run-name: Deploy (${{ github.ref_name }} -> ${{ inputs.environment }}) by @${{ github.actor }}
+run-name: >-
+  ${{ github.event_name == 'push'
+      && format('Auto-deploy (main -> staging) by @{0}', github.actor)
+      || format('Deploy ({0} -> {1}) by @{2}', github.ref_name, inputs.environment, github.actor) }}
+
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -18,15 +25,42 @@ on:
         default: false
 
 jobs:
-  deploy:
+  # Runs on every trigger (push-to-main or manual dispatch) so a push straight
+  # to main -- not just a PR -- still can't reach `deploy` without passing.
+  checks:
     runs-on: ubuntu-latest
     container: dtzar/helm-kubectl:3.9.4
-    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - uses: ./.github/actions/helm-checks
+
+  # A push to main always deploys staging only -- production stays a deliberate
+  # workflow_dispatch action. Resolved once here (rather than repeating the
+  # push/dispatch ternary in every field below) so there's a single source of
+  # truth for which environment this run targets.
+  resolve-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: [checks, resolve-environment]
+    runs-on: ubuntu-latest
+    container: dtzar/helm-kubectl:3.9.4
+    environment: ${{ needs.resolve-environment.outputs.environment }}
     env:
-      HELM_RELEASE_NAME: enact-wp-${{ inputs.environment }}
-      KUBE_NAMESPACE: enact-wp-${{ inputs.environment }}
-      HELM_EXTRA_ARGS: >
-        --values ops/${{ inputs.environment }}-values.yaml
+      DEPLOY_ENVIRONMENT: ${{ needs.resolve-environment.outputs.environment }}
+      HELM_RELEASE_NAME: enact-wp-${{ needs.resolve-environment.outputs.environment }}
+      KUBE_NAMESPACE: enact-wp-${{ needs.resolve-environment.outputs.environment }}
       KUBECONFIG_FILE: ${{ secrets.KUBECONFIG_FILE }}
       KUBECONFIG: ./kubeconfig.yml
     steps:
@@ -40,4 +74,4 @@ jobs:
       - name: Do deploy
         run: |
           echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
-          ./bin/helm_deploy "$HELM_RELEASE_NAME" "$KUBE_NAMESPACE"
+          HELM_EXTRA_ARGS="--values ops/${DEPLOY_ENVIRONMENT}-values.yaml" ./bin/helm_deploy "$HELM_RELEASE_NAME" "$KUBE_NAMESPACE"

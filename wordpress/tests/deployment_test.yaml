@@ -1,0 +1,32 @@
+suite: wordpress deployment / private-site toggle
+templates:
+  - templates/deployment.yaml
+  - templates/configmap-private-site.yaml
+values:
+  - ../../ops/staging-values.yaml
+tests:
+  - it: mounts the private-site mu-plugin by default
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: private-site
+            mountPath: /var/www/html/wp-content/mu-plugins/private-site.php
+            subPath: private-site.php
+      - template: templates/configmap-private-site.yaml
+        hasDocuments:
+          count: 1
+
+  - it: omits the private-site mu-plugin entirely when privateSite.enabled is false
+    set:
+      privateSite.enabled: false
+    asserts:
+      - template: templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: private-site
+      - template: templates/configmap-private-site.yaml
+        hasDocuments:
+          count: 0

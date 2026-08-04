@@ -1,0 +1,59 @@
+name: "Helm checks"
+description: "Lint, render, schema-validate, and unit-test the wordpress chart; shared by the Lint and Deploy workflows so both stay in sync."
+
+runs:
+  using: "composite"
+  steps:
+    - name: helm lint (staging values)
+      shell: bash
+      run: helm lint ./wordpress --values ops/staging-values.yaml
+
+    - name: helm lint (production values)
+      shell: bash
+      run: helm lint ./wordpress --values ops/production-values.yaml
+
+    - name: helm template (staging values)
+      shell: bash
+      run: helm template enact-wp-staging ./wordpress --values ops/staging-values.yaml > /tmp/enact-wp-staging.rendered.yaml
+
+    - name: helm template (production values)
+      shell: bash
+      run: helm template enact-wp-production ./wordpress --values ops/production-values.yaml > /tmp/enact-wp-production.rendered.yaml
+
+    - name: Install kubeconform
+      shell: bash
+      run: |
+        curl -sL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+        mv kubeconform /usr/local/bin/
+
+    # -ignore-missing-schemas: kubeconform only knows core Kubernetes schemas out of the
+    # box, not CRDs like our ExternalSecret (external-secrets.io/v1) -- this skips those
+    # gracefully instead of failing on "no schema found", while still validating every
+    # core/apps/networking.k8s.io resource (Deployment, Service, PVC, Ingress, ConfigMap)
+    # against the real Kubernetes API schema (catches typos helm lint/template won't).
+    - name: kubeconform (staging)
+      shell: bash
+      run: kubeconform -strict -summary -ignore-missing-schemas /tmp/enact-wp-staging.rendered.yaml
+
+    - name: kubeconform (production)
+      shell: bash
+      run: kubeconform -strict -summary -ignore-missing-schemas /tmp/enact-wp-production.rendered.yaml
+
+    - name: Install helm-unittest plugin
+      shell: bash
+      run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.2 --verify=false
+
+    - name: helm unittest
+      shell: bash
+      run: helm unittest ./wordpress
+
+    # Report-only: the official wordpress/mysql images we don't control run parts of
+    # their entrypoint as root before dropping privilege, so a hard-fail policy here
+    # would block legitimate deploys over conditions we can't fix in our own templates.
+    - name: Trivy config scan (staging, report only)
+      uses: aquasecurity/trivy-action@0.36.0
+      with:
+        scan-type: config
+        scan-ref: /tmp/enact-wp-staging.rendered.yaml
+        severity: "CRITICAL,HIGH"
+        exit-code: "0"

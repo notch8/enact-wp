@@ -26,10 +26,40 @@ normal 5-minute install wizard (it's unaffected by the login gate) -- pick a
 site title and an admin username/password there. Save that admin login in
 1Password; nothing about it is templated or stored by this repo.
 
+## Pipeline
+
+Every PR against `main` runs the **Lint** workflow, which is really a suite of
+Helm chart checks shared with **Deploy** via `.github/actions/helm-checks` so
+both stay in sync:
+
+- `helm lint` and `helm template`, against both `ops/staging-values.yaml` and
+  `ops/production-values.yaml`
+- [kubeconform](https://github.com/yannh/kubeconform) -- validates the
+  rendered manifests against the real Kubernetes API schema (catches
+  typos/structural mistakes `helm lint`/`helm template` won't, e.g. a wrong
+  field name or `apiVersion`)
+- [helm-unittest](https://github.com/helm-unittest/helm-unittest) -- unit
+  tests in `wordpress/tests/`, e.g. asserting that `privateSite.enabled: false`
+  actually removes the mu-plugin ConfigMap and its volume mount, and that the
+  `required()` guards on `ingress.hostname` / `externalSecret.onePasswordItem`
+  fire correctly
+- A [Trivy](https://github.com/aquasecurity/trivy) config scan of the rendered
+  manifests -- report-only (doesn't fail the build), since the official
+  `wordpress`/`mysql` images run parts of their entrypoint as root before
+  dropping privilege, which a hard-fail policy would otherwise block on
+
+**Merging to `main` runs those same checks again, then auto-deploys
+staging** -- `deploy.yaml`'s `push: branches: [main]` trigger, gated by the
+same `checks` job. Production is never auto-deployed; promoting to it is
+always a deliberate action.
+
 ## Deploying
 ### Ongoing deployment
-Trigger the **Deploy** workflow from the Actions tab, choose `staging` or
-`production`.
+Staging deploys itself on every merge to `main`, once checks pass. For a
+manual deploy of either environment (including production), trigger the
+**Deploy** workflow from the Actions tab and choose `staging` or
+`production` -- same as before, unaffected by the auto-deploy trigger. There's
+also an optional tmate-debug toggle there for troubleshooting a stuck deploy.
 
 ### One-time setup, before the first deploy of a new environment: the
 `enact-wp-staging` / `enact-wp-production` namespaces must exist before
@@ -73,11 +103,17 @@ That's it -- no plugin to uninstall, no file to delete. Setting
   per-environment differences (hostname, which 1Password item backs the DB
   credentials). Everything else is shared via `wordpress/values.yaml`.
 - `bin/helm_deploy RELEASE_NAME NAMESPACE` -- thin wrapper around
-  `helm upgrade --install` used by both local and CI deploys.
-- `.github/workflows/deploy.yaml` -- `workflow_dispatch` deploy (pick
-  `staging` or `production`).
-- `.github/workflows/lint.yaml` -- runs `helm lint`/`helm template` against
-  both environments' values on every push/PR to `main`.
+  `helm upgrade --install` used by both local and CI deploys. `NAMESPACE`
+  must already exist (see one-time setup below).
+- `.github/actions/helm-checks/` -- composite action with the actual chart
+  checks (lint, template, kubeconform, helm-unittest, Trivy); see Pipeline
+  above.
+- `.github/workflows/lint.yaml` -- runs `helm-checks` on every PR against
+  `main`.
+- `.github/workflows/deploy.yaml` -- runs `helm-checks`, then deploys.
+  Auto-deploys `staging` on push to `main`; `workflow_dispatch` also covers
+  manual deploys to either environment.
+- `wordpress/tests/` -- the helm-unittest test suites.
 
 ## Secrets
 
