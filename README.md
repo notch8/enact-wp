@@ -21,15 +21,32 @@ requires a real WordPress login. This is done by a one-file mu-plugin
 Nothing renders for anonymous visitors, so bots/scrapers get nothing to crawl,
 and there's no dependency on Cloudflare Access or any other external service.
 
-(We originally planned to gate access with Cloudflare Access instead, but the
-CoSector Cloudflare account's Zero Trust/Access feature isn't available to our
-role there. `terraform/cloudflare/access.tf` in `notch8-ops` is still there,
-generic and ready to use for this or anything else, once that's sorted out.)
-
 The very first time you open a given environment, you'll land on WordPress's
 normal 5-minute install wizard (it's unaffected by the login gate) -- pick a
 site title and an admin username/password there. Save that admin login in
 1Password; nothing about it is templated or stored by this repo.
+
+## Deploying
+### Ongoing deployment
+Trigger the **Deploy** workflow from the Actions tab, choose `staging` or
+`production`.
+
+### One-time setup, before the first deploy of a new environment: the
+`enact-wp-staging` / `enact-wp-production` namespaces must exist before
+`notch8-ops`'s `github-deploy-sa` Terraform can create the `github-deploy`
+ServiceAccount inside them (that module deliberately doesn't create
+namespaces itself -- see `terraform/modules/github-deploy-sa/README.md` in
+`notch8-ops`). Create them by hand once:
+
+```bash
+kubectl --context enact create namespace enact-wp-staging
+kubectl --context enact create namespace enact-wp-production
+```
+
+After that, `notch8-ops`'s `./bin/tf-cosector enact apply` (which provisions
+the `github-deploy` SA/RBAC/token) and
+`./scripts/push-github-deploy-kubeconfig.sh --cluster enact` (which pushes the
+resulting `KUBECONFIG_FILE` secret here) only need to run once per namespace.
 
 ### Making a site public
 
@@ -79,14 +96,6 @@ The only thing GitHub Actions holds is `KUBECONFIG_FILE` per environment, a
 namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 `terraform/modules/github-deploy-sa`).
 
-## Deploying
-
-Trigger the **Deploy** workflow from the Actions tab, choose `staging` or
-`production`. To deploy locally against a kubeconfig you already have:
-
-```bash
-HELM_EXTRA_ARGS="--values ops/staging-values.yaml" ./bin/helm_deploy enact-wp-staging enact-wp-staging
-```
 
 ## Versions
 
