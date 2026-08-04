@@ -41,7 +41,7 @@ runs:
 
     - name: Install helm-unittest plugin
       shell: bash
-      run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.2 --verify=false
+      run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
 
     - name: helm unittest
       shell: bash
