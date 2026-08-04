@@ -1,63 +1,56 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-wordpress
+  name: {{ .Release.Name }}-mysql
   labels:
-    app.kubernetes.io/name: wordpress
+    app.kubernetes.io/name: mysql
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: wordpress
+      app.kubernetes.io/name: mysql
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: wordpress
+        app.kubernetes.io/name: mysql
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       containers:
-        - name: wordpress
+        - name: mysql
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: WORDPRESS_DB_HOST
-              value: {{ include "wordpress.mysqlHost" . }}
-            - name: WORDPRESS_DB_NAME
+            - name: MYSQL_DATABASE
               value: {{ .Values.global.database.name }}
-            - name: WORDPRESS_DB_USER
+            - name: MYSQL_USER
               value: {{ .Values.global.database.user }}
-            - name: WORDPRESS_DB_PASSWORD
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.secretName }}
+                  key: root-password
+            - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.global.secretName }}
                   key: wordpress-password
           ports:
-            - containerPort: 80
-              name: http
+            - containerPort: 3306
+              name: mysql
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: wp-content
-              mountPath: /var/www/html
-            {{- if .Values.privateSite.enabled }}
-            - name: private-site
-              mountPath: /var/www/html/wp-content/mu-plugins/private-site.php
-              subPath: private-site.php
-            {{- end }}
+            - name: data
+              mountPath: /var/lib/mysql
       volumes:
-        - name: wp-content
+        - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-wordpress
+            claimName: {{ .Release.Name }}-mysql
           {{- else }}
           emptyDir: {}
           {{- end }}
-        {{- if .Values.privateSite.enabled }}
-        - name: private-site
-          configMap:
-            name: {{ .Release.Name }}-private-site
-        {{- end }}

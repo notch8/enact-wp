@@ -1,0 +1,9 @@
+# Staging environment overrides for ./wordpress.
+# No secrets here -- DB credentials flow entirely through the ExternalSecret
+# (1Password item referenced below), not through this file or GitHub secrets.
+
+ingress:
+  hostname: enact-wp-staging.enacthyku.com
+
+externalSecret:
+  onePasswordItem: wordpress-mysql-staging-enact

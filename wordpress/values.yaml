@@ -1,0 +1,80 @@
+# Vanilla WordPress + its own MySQL, for the Enact cluster.
+#
+# Image tags are intentionally the floating "latest" / "lts" pointers rather
+# than a pinned patch version -- this is the normal way both of these official
+# images are run, and it keeps the deployment on "most current stable" without
+# needing manual tag bumps. WordPress's own dashboard handles in-app core
+# updates independently of the container tag anyway, so pinning the image tag
+# wouldn't fully freeze the WP version either.
+
+image:
+  repository: wordpress
+  tag: latest
+  pullPolicy: Always
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  storageClass: gp3
+  size: 20Gi
+
+service:
+  port: 80
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  hostname: ""
+  clusterIssuer: letsencrypt-production-dns
+
+# Makes every front-end page require a real WordPress login, via a one-file
+# mu-plugin that hooks WP core's own auth_redirect() (the same function
+# wp-admin uses) into `template_redirect`. Keeps the site unreachable by
+# bots/scrapers without depending on any Cloudflare-side feature. wp-admin
+# and the install wizard are unaffected (auth_redirect() is only called for
+# non-admin requests). See README.md for how to turn this off.
+privateSite:
+  enabled: true
+
+# Pulls MySQL credentials from 1Password via the enact cluster's existing
+# `onepassword` ClusterSecretStore. Populates a single Secret consumed
+# directly by both this chart's WordPress deployment and the nested mysql
+# subchart below -- since both live in the same namespace there's no need to
+# duplicate the value into GitHub Actions secrets.
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  onePasswordItem: "" # set per environment, e.g. wordpress-mysql-staging-enact
+
+# Shared between this chart and the nested mysql subchart.
+global:
+  database:
+    name: wordpress
+    user: wordpress
+  secretName: wordpress-db-credentials
+
+mysql:
+  image:
+    repository: mysql
+    tag: lts
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    storageClass: gp3
+    size: 20Gi

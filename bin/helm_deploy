@@ -1,4 +1,12 @@
 #!/bin/sh
+
+# Wraps up helm deployment of the local ./wordpress chart (WordPress + its
+# nested mysql subchart). Meant as a clear starting point for commandline
+# deployment or CI based deployment.
+#
+# HELM_EXTRA_ARGS: any additional arguments you'd like passed to helm upgrade
+# directly, e.g. `--values ops/staging-values.yaml`.
+
 if [ -z "$1" ] || [ -z "$2" ]
 then
     echo './bin/helm_deploy RELEASE_NAME NAMESPACE'
@@ -6,8 +14,6 @@ then
 fi
 release_name="${1}"
 namespace="${2}"
-
-helm repo add bitnami https://charts.bitnami.com/bitnami
 
 helm upgrade \
     --install \
@@ -17,4 +23,4 @@ helm upgrade \
     --namespace="$namespace" \
     --create-namespace \
     "$release_name" \
-    bitnami/wordpress
+    ./wordpress

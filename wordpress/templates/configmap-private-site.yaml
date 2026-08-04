@@ -1,0 +1,24 @@
+{{- if .Values.privateSite.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-private-site
+  labels:
+    app.kubernetes.io/name: wordpress
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  private-site.php: |
+    <?php
+    /**
+     * Plugin Name: Private Site
+     * Description: Forces every front-end request through WordPress's own
+     * login screen (wp-admin and the install wizard are unaffected). Managed
+     * by the enact-wp Helm chart's `privateSite.enabled` value -- see this
+     * repo's README for how to turn this off.
+     */
+    add_action('template_redirect', function () {
+        if (!is_admin()) {
+            auth_redirect();
+        }
+    });
+{{- end }}

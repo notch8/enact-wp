@@ -1,0 +1,3 @@
+# Helm packaging/dependency-build output -- not source, regenerated on demand
+*.tgz
+.claude

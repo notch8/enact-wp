@@ -1,6 +1,10 @@
 apiVersion: v2
 name: wordpress
-description: A Helm chart for Kubernetes
+description: Vanilla WordPress + its own MySQL, for the Enact cluster
 type: application
 version: 0.1.0
-appVersion: "0.0.1"
+appVersion: "latest"
+dependencies:
+  - name: mysql
+    version: "0.1.0"
+    repository: "file://charts/mysql"

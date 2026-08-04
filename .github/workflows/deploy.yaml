@@ -1,0 +1,43 @@
+name: "Deploy"
+run-name: Deploy (${{ github.ref_name }} -> ${{ inputs.environment }}) by @${{ github.actor }}
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy to Environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+      debug_enabled:
+        type: boolean
+        description: "Run the deploy with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)"
+        required: false
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container: dtzar/helm-kubectl:3.9.4
+    environment: ${{ inputs.environment }}
+    env:
+      HELM_RELEASE_NAME: enact-wp-${{ inputs.environment }}
+      KUBE_NAMESPACE: enact-wp-${{ inputs.environment }}
+      HELM_EXTRA_ARGS: >
+        --values ops/${{ inputs.environment }}-values.yaml
+      KUBECONFIG_FILE: ${{ secrets.KUBECONFIG_FILE }}
+      KUBECONFIG: ./kubeconfig.yml
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: true
+      - name: Do deploy
+        run: |
+          echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
+          ./bin/helm_deploy "$HELM_RELEASE_NAME" "$KUBE_NAMESPACE"

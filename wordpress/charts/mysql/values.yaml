@@ -1,0 +1,20 @@
+# Standalone defaults -- normally overridden via the parent wordpress chart's
+# `mysql:` values key. `global.database` / `global.secretName` are provided by
+# the parent chart; see wordpress/values.yaml.
+image:
+  repository: mysql
+  tag: lts
+  pullPolicy: Always
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi
+
+persistence:
+  enabled: true
+  storageClass: gp3
+  size: 20Gi
