@@ -13,7 +13,7 @@ Uses only the Python 3 standard library. The REST API is reached via
 --testers additionally creates the tester accounts listed in site.json and
 prints generated passwords to stdout (they are never stored anywhere else).
 """
-import argparse, base64, json, mimetypes, secrets, string, sys, urllib.error, urllib.parse, urllib.request
+import argparse, base64, json, mimetypes, re, secrets, string, sys, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 CONTENT = Path(__file__).resolve().parent.parent / "content"
@@ -29,10 +29,14 @@ class WP:
     def url(self, route, params=None):
         q = {"rest_route": route}
         if params: q.update(params)
+        # Cache-buster: some edges (Cloudflare) can serve stale GETs, which
+        # breaks the find-then-create idempotency checks.
+        q["_cb"] = secrets.token_hex(4)
         return f"{self.base}/?{urllib.parse.urlencode(q)}"
 
     def req(self, method, route, params=None, body=None, headers=None, raw=None):
-        h = {"Authorization": self.auth, "User-Agent": "enact-provisioner/1.0"}
+        h = {"Authorization": self.auth, "User-Agent": "enact-provisioner/1.0",
+             "Cache-Control": "no-cache", "Pragma": "no-cache"}
         data = None
         if raw is not None:
             data = raw
@@ -122,7 +126,12 @@ def main():
         found = wp.get(route, {"search": name, "per_page": 100})
         for t in found:
             if t["name"].lower() == name.lower(): return t["id"]
-        return wp.post(route, body={"name": name})["id"]
+        try:
+            return wp.post(route, body={"name": name})["id"]
+        except RuntimeError as e:
+            m = re.search(r'"term_id":(\d+)', str(e))
+            if m: return int(m.group(1))
+            raise
 
     # --- post author ---------------------------------------------------------
     author = site["post_author"]
