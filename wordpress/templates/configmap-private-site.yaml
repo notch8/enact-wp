@@ -17,7 +17,13 @@ data:
      * repo's README for how to turn this off.
      */
     add_action('template_redirect', function () {
-        if (!is_admin()) {
+        // Only challenge anonymous visitors. auth_redirect() alone would
+        // also bounce logged-in users on front-end pages: over https it
+        // validates the wordpress_sec_ cookie, which WordPress scopes to
+        // /wp-admin, so browsers never send it here and every front-end
+        // view loops back to wp-login. is_user_logged_in() validates the
+        // site-wide logged_in cookie instead.
+        if (!is_admin() && !is_user_logged_in()) {
             auth_redirect();
         }
     });
