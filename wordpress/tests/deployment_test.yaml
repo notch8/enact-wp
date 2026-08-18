@@ -2,6 +2,9 @@ suite: wordpress deployment / private-site toggle
 templates:
   - templates/deployment.yaml
   - templates/configmap-private-site.yaml
+  # referenced by deployment.yaml's checksum annotations, so it must be in
+  # this suite's render context
+  - templates/configmap-php-uploads.yaml
 values:
   - ../../ops/staging-values.yaml
 tests:
