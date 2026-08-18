@@ -8,7 +8,11 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
   annotations:
     cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+    # Body-size annotation for both nginx ingress controller flavors; each
+    # ignores the other's. The community controller (kubernetes/ingress-nginx)
+    # reads the first, the F5 controller (nginxinc) reads the second.
     nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.proxyBodySize | quote }}
+    nginx.org/client-max-body-size: {{ .Values.ingress.proxyBodySize | quote }}
 spec:
   ingressClassName: {{ .Values.ingress.ingressClassName }}
   tls:

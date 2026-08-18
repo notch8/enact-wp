@@ -5,11 +5,15 @@ templates:
 values:
   - ../../ops/staging-values.yaml
 tests:
-  - it: sets the nginx proxy-body-size annotation
+  - it: sets the body-size annotation for both nginx controller flavors
     asserts:
       - template: templates/ingress.yaml
         equal:
           path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+          value: "64m"
+      - template: templates/ingress.yaml
+        equal:
+          path: metadata.annotations["nginx.org/client-max-body-size"]
           value: "64m"
 
   - it: renders matching php limits into uploads.ini
