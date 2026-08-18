@@ -26,6 +26,57 @@ normal 5-minute install wizard (it's unaffected by the login gate) -- pick a
 site title and an admin username/password there. Save that admin login in
 1Password; nothing about it is templated or stored by this repo.
 
+## Local development
+
+Mirror of the k8s deployment (same official images) via docker compose:
+
+```bash
+docker compose up -d            # WordPress on http://localhost:8080, MySQL alongside
+./bin/wp core install --url=http://localhost:8080 --title="Enact" \
+    --admin_user=admin --admin_password=<pick-one> --admin_email=<you>@notch8.com --skip-email
+./bin/wp rewrite structure '/%postname%/'
+./bin/wp user application-password create admin local --porcelain   # feed to bin/provision
+./bin/provision --base-url http://localhost:8080 --user admin --app-password '<from above>'
+```
+
+`./bin/wp <anything>` runs wp-cli against the local instance. The compose file
+sets `WP_ENVIRONMENT_TYPE=local` so application passwords work over plain http;
+that setting is intentionally absent from the k8s deployment, which is https.
+
+## Site content as code
+
+The `content/` directory is the seed for the whole site: block-markup HTML for
+every page and post, curated media (with alt text), the navigation tree, footer
+and news-listing template overrides, global styles, and site settings, all
+declared in `content/site.json`. `bin/provision` applies it over the WordPress
+REST API and is idempotent: items are matched by slug and updated in place, so
+it can be re-run after content edits without duplicating anything.
+
+Two provisioning caveats. First, it is a seed, not a sync: once real editors
+own the site in wp-admin, re-running `bin/provision` will overwrite their
+versions of anything it manages, so from that point treat `content/` as the
+record of how the site was born, not as the source of truth. Second, it never
+touches credentials: passwords printed by the scripts go to 1Password and
+nowhere else.
+
+## Bootstrapping a new environment
+
+For a fresh k8s environment (production was set up this way; a wiped staging
+would be too), no kubectl is needed -- everything runs over https:
+
+```bash
+bin/remote-bootstrap --base-url https://enact-wp-production.enacthyku.com \
+    --title Enact --admin-user notch8-admin --admin-email nick@notch8.com
+# prints the generated admin password and a REST application password
+bin/provision --base-url https://enact-wp-production.enacthyku.com \
+    --user notch8-admin --app-password '<printed above>' --testers
+```
+
+`remote-bootstrap` runs the install wizard, sets pretty permalinks, and mints
+an application password. `--testers` also creates the reviewer accounts listed
+in `content/site.json` with fresh random passwords printed to stdout. Save
+everything printed in 1Password immediately; nothing is stored.
+
 ## Pipeline
 
 Every PR against `main` runs the **Lint** workflow, which is really a suite of
@@ -103,6 +154,13 @@ That's it -- no plugin to uninstall, no file to delete. Setting
 - `ops/staging-values.yaml`, `ops/production-values.yaml` -- the only
   per-environment differences (hostname, which 1Password item backs the DB
   credentials). Everything else is shared via `wordpress/values.yaml`.
+- `content/` -- the site seed (pages, posts, media, navigation, styles,
+  settings) declared in `content/site.json`; see "Site content as code".
+- `bin/provision` -- applies `content/` to any environment over the REST API.
+- `bin/remote-bootstrap` -- one-time install wizard + permalinks + application
+  password for a fresh remote environment.
+- `bin/wp` -- wp-cli against the local docker compose instance.
+- `docker-compose.yml` -- local development mirror of the deployment.
 - `bin/helm_deploy RELEASE_NAME NAMESPACE` -- thin wrapper around
   `helm upgrade --install` used by both local and CI deploys. `NAMESPACE`
   must already exist (see one-time setup below).
