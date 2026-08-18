@@ -18,6 +18,13 @@ spec:
       labels:
         app.kubernetes.io/name: wordpress
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Both ConfigMaps are consumed via subPath mounts, which Kubernetes
+        # never live-updates in a running pod (kubernetes/kubernetes#50345).
+        # Hashing their rendered content into the pod template forces a
+        # rollout whenever either changes.
+        checksum/private-site: {{ include (print $.Template.BasePath "/configmap-private-site.yaml") . | sha256sum }}
+        checksum/php-uploads: {{ include (print $.Template.BasePath "/configmap-php-uploads.yaml") . | sha256sum }}
     spec:
       containers:
         - name: wordpress
