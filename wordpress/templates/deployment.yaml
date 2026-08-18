@@ -43,6 +43,9 @@ spec:
           volumeMounts:
             - name: wp-content
               mountPath: /var/www/html
+            - name: php-uploads
+              mountPath: /usr/local/etc/php/conf.d/uploads.ini
+              subPath: uploads.ini
             {{- if .Values.privateSite.enabled }}
             - name: private-site
               mountPath: /var/www/html/wp-content/mu-plugins/private-site.php
@@ -56,6 +59,9 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        - name: php-uploads
+          configMap:
+            name: {{ .Release.Name }}-php-uploads
         {{- if .Values.privateSite.enabled }}
         - name: private-site
           configMap:

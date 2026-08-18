@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-php-uploads
+  labels:
+    app.kubernetes.io/name: wordpress
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  uploads.ini: |
+    ; Raise PHP's stock 2M/8M upload ceilings for media uploads. Managed by
+    ; the enact-wp Helm chart's `phpUploads.maxSize` value; the nginx-side
+    ; equivalent is `ingress.proxyBodySize`.
+    upload_max_filesize = {{ .Values.phpUploads.maxSize }}
+    post_max_size = {{ .Values.phpUploads.maxSize }}

@@ -18,6 +18,16 @@ tests:
         hasDocuments:
           count: 1
 
+  - it: mounts the php uploads ini over the container's conf.d
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: php-uploads
+            mountPath: /usr/local/etc/php/conf.d/uploads.ini
+            subPath: uploads.ini
+
   - it: omits the private-site mu-plugin entirely when privateSite.enabled is false
     set:
       privateSite.enabled: false
