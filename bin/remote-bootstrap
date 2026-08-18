@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Bootstrap a fresh remote WordPress environment so bin/provision can run.
+
+Does three things over plain HTTPS (no kubectl needed), using WordPress's own
+forms the way a browser would:
+
+  1. Runs the 5-minute install wizard (skipped if already installed), with a
+     generated-or-supplied admin password. Save the printed credentials in
+     1Password immediately; they are not stored anywhere.
+  2. Sets pretty permalinks (/%postname%/).
+  3. Creates a REST Application Password for the admin and prints it; feed it
+     to bin/provision --app-password.
+
+Usage (fresh environment):
+  bin/remote-bootstrap --base-url https://enact-wp-production.enacthyku.com \
+      --title Enact --admin-user notch8-admin --admin-email nick@notch8.com
+
+Usage (already-installed environment, e.g. to mint a new app password):
+  bin/remote-bootstrap --base-url https://enact-wp-staging.enacthyku.com \
+      --admin-user <user> --admin-password '<pass>' --skip-install
+"""
+import argparse, datetime, http.cookiejar, json, re, secrets, string, sys, urllib.parse, urllib.request
+
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) enact-wp-bootstrap"
+
+def gen_password():
+    alphabet = string.ascii_letters + string.digits
+    return "-".join("".join(secrets.choice(alphabet) for _ in range(6)) for _ in range(4))
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--title", default="Enact")
+    ap.add_argument("--admin-user", required=True)
+    ap.add_argument("--admin-email", default="nick@notch8.com")
+    ap.add_argument("--admin-password", help="use this password instead of generating one")
+    ap.add_argument("--skip-install", action="store_true")
+    args = ap.parse_args()
+    base = args.base_url.rstrip("/")
+
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = [("User-Agent", UA)]
+
+    def fetch(url, data=None, headers=None):
+        req = urllib.request.Request(url, data=data)
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        with opener.open(req, timeout=120) as r:
+            return r.read().decode("utf-8", "replace"), r.geturl()
+
+    def post_form(url, fields):
+        return fetch(url, urllib.parse.urlencode(fields).encode(),
+                     {"Content-Type": "application/x-www-form-urlencoded"})
+
+    password = args.admin_password or gen_password()
+
+    body, _ = fetch(f"{base}/wp-admin/install.php")
+    installed = "Already Installed" in body or "already installed" in body
+    if args.skip_install or installed:
+        print(f"Install: skipped ({'already installed' if installed else '--skip-install'})")
+        if not args.admin_password:
+            sys.exit("Need --admin-password to log in to an already-installed site.")
+    else:
+        body, _ = post_form(f"{base}/wp-admin/install.php?step=2", {
+            "weblog_title": args.title, "user_name": args.admin_user,
+            "admin_password": password, "admin_password2": password,
+            "admin_email": args.admin_email, "blog_public": "0",
+            "Submit": "Install WordPress", "language": ""})
+        if "Success" not in body and "success" not in body:
+            sys.exit(f"Install may have failed; response excerpt: {body[:400]}")
+        print(f"Install: done. ADMIN LOGIN -> user: {args.admin_user}  password: {password}")
+        print("  ^^ save this in 1Password now")
+
+    # Log in (WordPress requires its test cookie to be present first).
+    fetch(f"{base}/wp-login.php")
+    body, final = post_form(f"{base}/wp-login.php", {
+        "log": args.admin_user, "pwd": password, "rememberme": "forever",
+        "redirect_to": f"{base}/wp-admin/", "testcookie": "1",
+        "wp-submit": "Log In"})
+    if not any(c.name.startswith("wordpress_logged_in") for c in jar):
+        sys.exit("Login failed; check the username/password.")
+    print("Login: ok")
+
+    # Pretty permalinks.
+    body, _ = fetch(f"{base}/wp-admin/options-permalink.php")
+    nonce = re.search(r'name="_wpnonce" value="([a-f0-9]+)"', body)
+    if not nonce:
+        sys.exit("Could not find permalink form nonce.")
+    post_form(f"{base}/wp-admin/options-permalink.php", {
+        "_wpnonce": nonce.group(1),
+        "_wp_http_referer": "/wp-admin/options-permalink.php",
+        "selection": "/%postname%/", "permalink_structure": "/%postname%/",
+        "category_base": "", "tag_base": "", "submit": "Save Changes"})
+    print("Permalinks: /%postname%/")
+
+    # Application password via the REST API with cookie auth + nonce.
+    body, _ = fetch(f"{base}/wp-admin/profile.php")
+    m = (re.search(r'createNonceMiddleware\(\s*"([a-f0-9]+)"', body)
+         or re.search(r'"nonce":"([a-f0-9]+)"', body)
+         or re.search(r'wpApiSettings[^}]*"nonce":"([a-f0-9]+)"', body))
+    if not m:
+        sys.exit("Could not find a REST nonce on profile.php.")
+    name = "provisioner-" + datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    data = json.dumps({"name": name}).encode()
+    body, _ = fetch(f"{base}/?rest_route=/wp/v2/users/me/application-passwords",
+                    data, {"Content-Type": "application/json", "X-WP-Nonce": m.group(1)})
+    app_pw = json.loads(body).get("password")
+    if not app_pw:
+        sys.exit(f"App password creation failed: {body[:400]}")
+    print(f"App password ({name}): {app_pw}")
+    print("Bootstrap complete. Now run bin/provision with --app-password shown above.")
+
+if __name__ == "__main__":
+    main()

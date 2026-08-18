@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Provision an Enact WordPress instance from content/ over the REST API.
+
+Idempotent: safe to re-run; existing items (matched by slug/filename) are
+updated in place. Works against any environment:
+
+    bin/provision --base-url http://localhost:8080 --user admin --app-password 'xxxx xxxx ...'
+    bin/provision --base-url https://enact-wp-production.enacthyku.com --user enact-owner \
+        --app-password '...' --testers
+
+Uses only the Python 3 standard library. The REST API is reached via
+?rest_route= so it works before and after pretty permalinks are enabled.
+--testers additionally creates the tester accounts listed in site.json and
+prints generated passwords to stdout (they are never stored anywhere else).
+"""
+import argparse, base64, json, mimetypes, secrets, string, sys, urllib.error, urllib.parse, urllib.request
+from pathlib import Path
+
+CONTENT = Path(__file__).resolve().parent.parent / "content"
+
+def log(msg): print(msg, flush=True)
+
+class WP:
+    def __init__(self, base, user, password):
+        self.base = base.rstrip("/")
+        token = base64.b64encode(f"{user}:{password}".encode()).decode()
+        self.auth = f"Basic {token}"
+
+    def url(self, route, params=None):
+        q = {"rest_route": route}
+        if params: q.update(params)
+        return f"{self.base}/?{urllib.parse.urlencode(q)}"
+
+    def req(self, method, route, params=None, body=None, headers=None, raw=None):
+        h = {"Authorization": self.auth, "User-Agent": "enact-provisioner/1.0"}
+        data = None
+        if raw is not None:
+            data = raw
+        elif body is not None:
+            data = json.dumps(body).encode()
+            h["Content-Type"] = "application/json"
+        if headers: h.update(headers)
+        r = urllib.request.Request(self.url(route, params), data=data, method=method, headers=h)
+        try:
+            with urllib.request.urlopen(r, timeout=120) as resp:
+                return json.loads(resp.read().decode() or "null")
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode()[:500]
+            raise RuntimeError(f"{method} {route} -> HTTP {e.code}: {detail}") from None
+
+    def get(self, route, params=None): return self.req("GET", route, params)
+    def post(self, route, body=None, params=None, **kw): return self.req("POST", route, params, body, **kw)
+    def delete(self, route, params=None): return self.req("DELETE", route, params)
+
+def find_by_slug(wp, route, slug, extra=None):
+    params = {"slug": slug, "per_page": 100, "context": "edit"}
+    if extra: params.update(extra)
+    items = wp.get(route, params)
+    return items[0] if items else None
+
+def gen_password():
+    alphabet = string.ascii_letters + string.digits
+    return "-".join("".join(secrets.choice(alphabet) for _ in range(6)) for _ in range(4))
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--user", required=True)
+    ap.add_argument("--app-password", required=True)
+    ap.add_argument("--testers", action="store_true", help="also create tester accounts from site.json")
+    args = ap.parse_args()
+
+    wp = WP(args.base_url, args.user, args.app_password)
+    site = json.loads((CONTENT / "site.json").read_text())
+    me = wp.get("/wp/v2/users/me")
+    log(f"Authenticated as {me['name']} on {args.base_url}")
+
+    # --- media -------------------------------------------------------------
+    media_ids, media_urls = {}, {}
+    for m in site["media"]:
+        fname = m["file"]
+        slug = Path(fname).stem.lower()
+        existing = find_by_slug(wp, "/wp/v2/media", slug)
+        if existing:
+            item = existing
+        else:
+            path = CONTENT / "media" / fname
+            ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+            item = wp.post("/wp/v2/media", raw=path.read_bytes(), headers={
+                "Content-Type": ctype,
+                "Content-Disposition": f'attachment; filename="{fname}"'})
+            log(f"  uploaded {fname} (id {item['id']})")
+        wp.post(f"/wp/v2/media/{item['id']}", body={"alt_text": m["alt"], "title": m["title"]})
+        media_ids[fname] = item["id"]
+        media_urls[fname] = item["source_url"]
+    log(f"Media ready: {len(media_ids)} items")
+
+    def substitute(text):
+        for fname, mid in media_ids.items():
+            text = text.replace("{{media_id:%s}}" % fname, str(mid))
+            text = text.replace("{{media_url:%s}}" % fname, media_urls[fname])
+        return text
+
+    # --- pages -------------------------------------------------------------
+    page_ids = {}
+    for p in site["pages"]:
+        content = substitute((CONTENT / p["file"]).read_text())
+        body = {"title": p["title"], "slug": p["slug"], "status": "publish",
+                "content": content, "comment_status": "closed", "ping_status": "closed"}
+        if p.get("parent"): body["parent"] = page_ids[p["parent"]]
+        if p.get("template"): body["template"] = p["template"]
+        existing = find_by_slug(wp, "/wp/v2/pages", p["slug"])
+        if existing:
+            item = wp.post(f"/wp/v2/pages/{existing['id']}", body=body)
+        else:
+            item = wp.post("/wp/v2/pages", body=body)
+        page_ids[p["slug"]] = item["id"]
+        log(f"  page {p['slug']} (id {item['id']})")
+
+    # --- category + tags ----------------------------------------------------
+    def ensure_term(route, name):
+        found = wp.get(route, {"search": name, "per_page": 100})
+        for t in found:
+            if t["name"].lower() == name.lower(): return t["id"]
+        return wp.post(route, body={"name": name})["id"]
+
+    # --- post author ---------------------------------------------------------
+    author = site["post_author"]
+    users = wp.get("/wp/v2/users", {"search": author["username"], "context": "edit"})
+    match = [u for u in users if u.get("username") == author["username"] or u.get("slug") == author["username"]]
+    if match:
+        author_id = match[0]["id"]
+    else:
+        author_id = wp.post("/wp/v2/users", body={
+            "username": author["username"], "name": author["display_name"],
+            "first_name": author["display_name"], "email": author["email"],
+            "roles": [author["role"]], "password": gen_password()})["id"]
+        log(f"  created author user {author['username']}")
+    wp.post(f"/wp/v2/users/{author_id}", body={"name": author["display_name"]})
+
+    # --- posts ---------------------------------------------------------------
+    for p in site["posts"]:
+        content = substitute((CONTENT / p["file"]).read_text())
+        cat_id = ensure_term("/wp/v2/categories", p["category"])
+        tag_ids = [ensure_term("/wp/v2/tags", t) for t in p["tags"]]
+        body = {"title": p["title"], "slug": p["slug"], "status": "publish",
+                "content": content, "date": p["date"], "categories": [cat_id],
+                "tags": tag_ids, "author": author_id, "comment_status": "closed",
+                "ping_status": "closed"}
+        existing = find_by_slug(wp, "/wp/v2/posts", p["slug"])
+        if existing:
+            item = wp.post(f"/wp/v2/posts/{existing['id']}", body=body)
+        else:
+            item = wp.post("/wp/v2/posts", body=body)
+        log(f"  post {p['slug']} (id {item['id']})")
+
+    # --- navigation ----------------------------------------------------------
+    def nav_link(entry, inner=""):
+        pid, url = page_ids[entry["page"]], f"{wp.base}/?page_id={page_ids[entry['page']]}"
+        pg = find_by_slug(wp, "/wp/v2/pages", entry["page"])
+        url = pg["link"] if pg else url
+        attrs = json.dumps({"label": entry["label"], "type": "page", "id": pid,
+                            "url": url, "kind": "post-type"})
+        if inner:
+            return (f'<!-- wp:navigation-submenu {attrs} -->{inner}<!-- /wp:navigation-submenu -->')
+        return f'<!-- wp:navigation-link {attrs} /-->'
+
+    nav_markup = ""
+    for entry in site["navigation"]:
+        inner = "".join(nav_link(c) for c in entry.get("children", []))
+        nav_markup += nav_link(entry, inner)
+
+    existing = find_by_slug(wp, "/wp/v2/navigation", "main-navigation")
+    nav_body = {"title": "Main Navigation", "slug": "main-navigation",
+                "status": "publish", "content": nav_markup}
+    if existing:
+        wp.post(f"/wp/v2/navigation/{existing['id']}", body=nav_body)
+    else:
+        wp.post("/wp/v2/navigation", body=nav_body)
+    log("Navigation ready")
+
+    # --- template parts --------------------------------------------------------
+    for part, fname in site.get("template_parts", {}).items():
+        content = substitute((CONTENT / fname).read_text())
+        theme = wp.get("/wp/v2/themes", {"status": "active"})[0]["stylesheet"]
+        part_id = f"{theme}//{part}"
+        wp.post(f"/wp/v2/template-parts/{part_id}", body={"content": content})
+        log(f"  template part {part_id} updated")
+
+    # --- templates ---------------------------------------------------------------
+    for tpl, fname in site.get("templates", {}).items():
+        content = substitute((CONTENT / fname).read_text())
+        theme = wp.get("/wp/v2/themes", {"status": "active"})[0]["stylesheet"]
+        tpl_id = f"{theme}//{tpl}"
+        wp.post(f"/wp/v2/templates/{tpl_id}", body={"content": content})
+        log(f"  template {tpl_id} updated")
+
+    # --- global styles ----------------------------------------------------------
+    gs_file = site.get("global_styles")
+    if gs_file:
+        theme = wp.get("/wp/v2/themes", {"status": "active"})[0]
+        href = theme["_links"]["wp:user-global-styles"][0]["href"]
+        gs_id = href.rstrip("/").split("/")[-1]
+        gs = json.loads((CONTENT / gs_file).read_text())
+        wp.post(f"/wp/v2/global-styles/{gs_id}", body=gs)
+        log("Global styles applied")
+
+    # --- settings ------------------------------------------------------------
+    settings = dict(site["settings"])
+    settings["show_on_front"] = "page"
+    settings["page_on_front"] = page_ids[site["front_page"]]
+    settings["page_for_posts"] = page_ids[site["posts_page"]]
+    icon = site.get("site_icon_media")
+    if icon: settings["site_icon"] = media_ids[icon]
+    wp.post("/wp/v2/settings", body=settings)
+    log("Settings applied")
+
+    # --- cleanup ---------------------------------------------------------------
+    cl = site.get("cleanup", {})
+    for slug in cl.get("delete_page_slugs", []):
+        it = find_by_slug(wp, "/wp/v2/pages", slug)
+        if it and it["id"] not in page_ids.values():
+            wp.delete(f"/wp/v2/pages/{it['id']}", {"force": "true"}); log(f"  deleted page {slug}")
+    for slug in cl.get("delete_post_slugs", []):
+        it = find_by_slug(wp, "/wp/v2/posts", slug)
+        if it:
+            wp.delete(f"/wp/v2/posts/{it['id']}", {"force": "true"}); log(f"  deleted post {slug}")
+    try:
+        plugins = wp.get("/wp/v2/plugins")
+        for target in cl.get("delete_plugins", []):
+            for pl in plugins:
+                if pl["plugin"] == target and pl["status"] == "inactive":
+                    wp.delete(f"/wp/v2/plugins/{target}")
+                    log(f"  deleted plugin {target}")
+    except RuntimeError as e:
+        log(f"  plugin cleanup skipped: {e}")
+
+    # --- testers ---------------------------------------------------------------
+    if args.testers:
+        log("Tester accounts:")
+        for t in site["testers"]:
+            existing = wp.get("/wp/v2/users", {"search": t["username"], "context": "edit"})
+            match = [u for u in existing if u.get("username") == t["username"] or u.get("slug") == t["username"]]
+            pw = gen_password()
+            try:
+                if match:
+                    wp.post(f"/wp/v2/users/{match[0]['id']}", body={"password": pw, "roles": [t["role"]], "name": t["display_name"]})
+                else:
+                    wp.post("/wp/v2/users", body={"username": t["username"], "name": t["display_name"],
+                            "email": t["email"], "roles": [t["role"]], "password": pw})
+                log(f"  {t['username']} ({t['role']}): {pw}")
+            except RuntimeError as e:
+                log(f"  {t['username']} FAILED: {e}")
+
+    log("Provisioning complete.")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# wp-cli against the local docker compose WordPress. Example: ./bin/wp plugin list
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec docker compose run --rm cli "$@"
