@@ -17,6 +17,9 @@ services:
         define('WP_ENVIRONMENT_TYPE', 'local');
     volumes:
       - wp_data:/var/www/html
+    configs:
+      - source: php_uploads_ini
+        target: /usr/local/etc/php/conf.d/uploads.ini
     depends_on:
       db:
         condition: service_healthy
@@ -56,3 +59,10 @@ services:
 volumes:
   wp_data:
   db_data:
+
+# Parity with the chart's php-uploads ConfigMap (phpUploads.maxSize).
+configs:
+  php_uploads_ini:
+    content: |
+      upload_max_filesize = 64M
+      post_max_size = 64M

@@ -35,6 +35,16 @@ ingress:
   ingressClassName: nginx
   hostname: ""
   clusterIssuer: letsencrypt-production-dns
+  # nginx's default 1m request-body cap rejects normal media uploads with a
+  # 413. Keep this in step with phpUploads.maxSize below (nginx wants "64m",
+  # PHP wants "64M").
+  proxyBodySize: 64m
+
+# PHP's stock limits (upload_max_filesize=2M) are below what editors need for
+# ordinary photos and PDFs. Rendered into an uploads.ini mounted over
+# /usr/local/etc/php/conf.d/ in the WordPress container.
+phpUploads:
+  maxSize: 64M
 
 # Makes every front-end page require a real WordPress login, via a one-file
 # mu-plugin that hooks WP core's own auth_redirect() (the same function

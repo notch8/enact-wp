@@ -1,0 +1,24 @@
+suite: upload size limits
+templates:
+  - templates/ingress.yaml
+  - templates/configmap-php-uploads.yaml
+values:
+  - ../../ops/staging-values.yaml
+tests:
+  - it: sets the nginx proxy-body-size annotation
+    asserts:
+      - template: templates/ingress.yaml
+        equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+          value: "64m"
+
+  - it: renders matching php limits into uploads.ini
+    asserts:
+      - template: templates/configmap-php-uploads.yaml
+        matchRegex:
+          path: data["uploads.ini"]
+          pattern: "upload_max_filesize = 64M"
+      - template: templates/configmap-php-uploads.yaml
+        matchRegex:
+          path: data["uploads.ini"]
+          pattern: "post_max_size = 64M"
