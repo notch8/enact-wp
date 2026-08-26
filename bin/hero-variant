@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Switch the home page hero band between the two brand variants.
+
+    bin/hero-variant --base-url ... --user ... --app-password '...' --variant aqua
+    bin/hero-variant --base-url ... --user ... --app-password '...' --variant dark [--dry-run]
+
+Variants:
+  dark  -- deep green band (palette "contrast"), white text, aqua buttons.
+           This is what the seed ships.
+  aqua  -- brand-aqua band (palette "accent-1"), deep green text, dark primary button.
+
+The edit is surgical: it fetches the page's raw content and rewrites only the
+hero group's color attributes (and the primary button under the aqua variant),
+so editor changes elsewhere on the page are preserved. --dry-run prints the
+would-be changes without writing.
+"""
+import argparse, base64, json, secrets, sys, urllib.parse, urllib.request
+
+HERO_DARK_ATTRS = '{"align":"full","backgroundColor":"contrast","textColor":"base","style":{"spacing":{"padding":{"top":"var:preset|spacing|70","bottom":"var:preset|spacing|70"}}},"layout":{"type":"constrained"}}'
+HERO_AQUA_ATTRS = '{"align":"full","backgroundColor":"accent-1","textColor":"contrast","style":{"spacing":{"padding":{"top":"var:preset|spacing|70","bottom":"var:preset|spacing|70"}}},"layout":{"type":"constrained"}}'
+HERO_DARK_CLASS = 'has-base-color has-contrast-background-color'
+HERO_AQUA_CLASS = 'has-contrast-color has-accent-1-background-color'
+BTN_PLAIN_OPEN = '<!-- wp:button -->\n<div class="wp-block-button"><a class="wp-block-button__link wp-element-button"'
+BTN_DARK_OPEN = '<!-- wp:button {"backgroundColor":"contrast","textColor":"base"} -->\n<div class="wp-block-button"><a class="wp-block-button__link has-base-color has-contrast-background-color has-text-color has-background wp-element-button"'
+
+def swaps(variant):
+    if variant == "aqua":
+        return [(HERO_DARK_ATTRS, HERO_AQUA_ATTRS, 1),
+                (HERO_DARK_CLASS, HERO_AQUA_CLASS, 1),
+                (BTN_PLAIN_OPEN, BTN_DARK_OPEN, 1)]
+    return [(HERO_AQUA_ATTRS, HERO_DARK_ATTRS, 1),
+            (HERO_AQUA_CLASS, HERO_DARK_CLASS, 1),
+            (BTN_DARK_OPEN, BTN_PLAIN_OPEN, 1)]
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base-url", required=True)
+    ap.add_argument("--user", required=True)
+    ap.add_argument("--app-password", required=True)
+    ap.add_argument("--variant", required=True, choices=["aqua", "dark"])
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    base = args.base_url.rstrip("/")
+    token = base64.b64encode(f"{args.user}:{args.app_password}".encode()).decode()
+    headers = {"Authorization": f"Basic {token}", "User-Agent": "enact-provisioner/1.0",
+               "Cache-Control": "no-cache"}
+
+    def req(method, route, params=None, body=None):
+        q = {"rest_route": route, "_cb": secrets.token_hex(4)}
+        if params: q.update(params)
+        data = json.dumps(body).encode() if body is not None else None
+        h = dict(headers)
+        if data: h["Content-Type"] = "application/json"
+        r = urllib.request.Request(f"{base}/?{urllib.parse.urlencode(q)}",
+                                   data=data, method=method, headers=h)
+        with urllib.request.urlopen(r, timeout=60) as resp:
+            return json.loads(resp.read().decode())
+
+    pages = req("GET", "/wp/v2/pages", {"slug": "home", "context": "edit", "per_page": 100})
+    if not pages: sys.exit("home page not found")
+    page = pages[0]
+    content = page["content"]["raw"]
+
+    changed = content
+    applied = []
+    for old, new, count in swaps(args.variant):
+        if old in changed:
+            changed = changed.replace(old, new, count)
+            applied.append(f"  swapped: {old[:60]}...")
+    if changed == content:
+        print(f"home hero already in '{args.variant}' state (or markup drifted; nothing matched)")
+        return
+    for a in applied: print(a)
+    if args.dry_run:
+        print("dry run: not writing")
+        return
+    req("POST", f"/wp/v2/pages/{page['id']}", body={"content": changed})
+    print(f"home hero set to '{args.variant}' ({len(applied)} edits)")
+
+if __name__ == "__main__":
+    main()
