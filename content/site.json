@@ -2,6 +2,7 @@
   "settings": {
     "title": "Enact",
     "description": "A repository created for practice research",
+    "language": "en_GB",
     "timezone_string": "Europe/London",
     "date_format": "j F Y",
     "time_format": "H:i",
