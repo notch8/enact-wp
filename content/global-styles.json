@@ -1,13 +1,31 @@
 {
   "styles": {
+    "css": ".has-contrast-background-color a:where(:not(.wp-element-button)){color:var(--wp--preset--color--accent-1)} .has-accent-1-background-color a:where(:not(.wp-element-button)){color:var(--wp--preset--color--contrast)}",
+    "typography": {
+      "fontFamily": "var:preset|font-family|ibm-plex-sans",
+      "fontWeight": "400"
+    },
     "elements": {
+      "heading": {
+        "typography": {
+          "fontFamily": "var:preset|font-family|ibm-plex-sans",
+          "fontWeight": "700"
+        }
+      },
       "link": {
         "color": { "text": "var:preset|color|accent-3" }
       },
       "button": {
         "color": {
-          "background": "var:preset|color|accent-3",
-          "text": "var:preset|color|base"
+          "background": "var:preset|color|accent-1",
+          "text": "var:preset|color|contrast"
+        },
+        "typography": { "fontWeight": "600" },
+        ":hover": {
+          "color": {
+            "background": "var:preset|color|accent-3",
+            "text": "var:preset|color|base"
+          }
         }
       }
     }
@@ -17,13 +35,38 @@
       "palette": {
         "theme": [
           { "slug": "base", "color": "#FFFFFF", "name": "Base" },
-          { "slug": "contrast", "color": "#111111", "name": "Contrast" },
-          { "slug": "accent-1", "color": "#FFEE58", "name": "Accent 1" },
-          { "slug": "accent-2", "color": "#EDE9FA", "name": "Accent 2" },
-          { "slug": "accent-3", "color": "#503AA8", "name": "Accent 3" },
-          { "slug": "accent-4", "color": "#686868", "name": "Accent 4" },
-          { "slug": "accent-5", "color": "#FBFAF3", "name": "Accent 5" },
+          { "slug": "contrast", "color": "#12211D", "name": "Contrast" },
+          { "slug": "accent-1", "color": "#45BC99", "name": "Brand Aqua" },
+          { "slug": "accent-2", "color": "#E9F7F3", "name": "Aqua Tint" },
+          { "slug": "accent-3", "color": "#29705B", "name": "Deep Aqua" },
+          { "slug": "accent-4", "color": "#686868", "name": "Gray" },
+          { "slug": "accent-5", "color": "#FBFAF3", "name": "Off White" },
           { "slug": "accent-6", "color": "color-mix(in srgb, currentColor 20%, transparent)", "name": "Accent 6" }
+        ]
+      }
+    },
+    "typography": {
+      "fontFamilies": {
+        "custom": [
+          {
+            "name": "IBM Plex Sans",
+            "slug": "ibm-plex-sans",
+            "fontFamily": "\"IBM Plex Sans\", sans-serif",
+            "fontFace": [
+              {
+                "fontFamily": "IBM Plex Sans",
+                "fontStyle": "normal",
+                "fontWeight": "100 700",
+                "src": ["{{font_url:IBMPlexSans-Variable.woff2}}"]
+              },
+              {
+                "fontFamily": "IBM Plex Sans",
+                "fontStyle": "italic",
+                "fontWeight": "100 700",
+                "src": ["{{font_url:IBMPlexSans-Italic-Variable.woff2}}"]
+              }
+            ]
+          }
         ]
       }
     }

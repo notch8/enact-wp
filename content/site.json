@@ -10,11 +10,15 @@
     "default_comment_status": "closed",
     "default_ping_status": "closed"
   },
-  "site_icon_media": "ahrc-logo.png",
+  "site_icon_media": "enact-site-icon.png",
+  "site_logo_media": "enact-logo-header.png",
   "front_page": "home",
   "posts_page": "news",
   "media": [
-    { "file": "enact-logo.png", "title": "Enact logo", "alt": "Enact: Practice Research logo" },
+    { "file": "enact-logo.png", "title": "Enact logo (old)", "alt": "Enact: Practice Research logo" },
+    { "file": "enact-logo-header.png", "title": "Enact logo (header)", "alt": "Enact logo" },
+    { "file": "enact-site-icon.png", "title": "Enact site icon", "alt": "Enact logo" },
+    { "file": "enact-logo-full.png", "title": "Enact logo (full)", "alt": "Enact logo: the word Enact in white inside an aqua square" },
     { "file": "ahrc-logo.png", "title": "AHRC logo", "alt": "UKRI Arts and Humanities Research Council logo" },
     { "file": "university-of-westminster-logo.png", "title": "University of Westminster logo", "alt": "University of Westminster logo" },
     { "file": "queen-mary-university-of-london-logo.jpg", "title": "Queen Mary University of London logo", "alt": "Queen Mary University of London logo" },
@@ -67,9 +71,20 @@
     { "label": "News", "page": "news" },
     { "label": "Contact", "page": "contact" }
   ],
-  "template_parts": { "footer": "template-parts/footer.html" },
+  "template_parts": { "header": "template-parts/header.html", "footer": "template-parts/footer.html" },
   "templates": { "home": "templates/home.html" },
   "global_styles": "global-styles.json",
+  "fonts": [
+    {
+      "name": "IBM Plex Sans",
+      "slug": "ibm-plex-sans",
+      "fontFamily": "\"IBM Plex Sans\", sans-serif",
+      "faces": [
+        { "file": "IBMPlexSans-Variable.woff2", "fontWeight": "100 700", "fontStyle": "normal" },
+        { "file": "IBMPlexSans-Italic-Variable.woff2", "fontWeight": "100 700", "fontStyle": "italic" }
+      ]
+    }
+  ],
   "testers": [
     { "username": "nick", "display_name": "Nick Steinwachs", "role": "administrator", "email": "nick+enact-wp@notch8.com" },
     { "username": "enact-admin", "display_name": "Enact Admin", "role": "administrator", "email": "nick+enact-admin@notch8.com" },

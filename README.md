@@ -46,11 +46,21 @@ that setting is intentionally absent from the k8s deployment, which is https.
 ## Site content as code
 
 The `content/` directory is the seed for the whole site: block-markup HTML for
-every page and post, curated media (with alt text), the navigation tree, footer
-and news-listing template overrides, global styles, and site settings, all
-declared in `content/site.json`. `bin/provision` applies it over the WordPress
-REST API and is idempotent: items are matched by slug and updated in place, so
-it can be re-run after content edits without duplicating anything.
+every page and post, curated media (with alt text), self-hosted web fonts, the
+navigation tree, header/footer and news-listing template overrides, global
+styles, and site settings, all declared in `content/site.json`. `bin/provision`
+applies it over the WordPress REST API and is idempotent: items are matched by
+slug and updated in place, so it can be re-run after content edits without
+duplicating anything.
+
+`bin/provision --only SECTION[,SECTION...]` applies a subset of the seed
+(sections: media, fonts, pages, posts, navigation, template-parts, templates,
+global-styles, site-branding, settings, cleanup). This is how changes reach an
+environment where editors already own the content — e.g. the brand rollout is
+`--only media,fonts,template-parts,global-styles,site-branding`, which never
+touches pages, posts or navigation. See `docs/branding.md` for the brand
+implementation (palette, logo renders, IBM Plex Sans with the FF Real swap
+plan) and `bin/hero-variant` for the two approved home-hero looks.
 
 Two provisioning caveats. First, it is a seed, not a sync: once real editors
 own the site in wp-admin, re-running `bin/provision` will overwrite their
