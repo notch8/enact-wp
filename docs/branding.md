@@ -88,11 +88,18 @@ provision against it. Brand changes deploy with:
 
     bin/provision --base-url https://enact-wp-production.enacthyku.com \
         --user notch8-admin --app-password '...' \
-        --only media,fonts,template-parts,global-styles,site-branding
+        --only media,fonts,global-styles,site-branding
 
-which touches media (additive), fonts, the header/footer template parts, global
-styles, and the site icon + logo settings — and nothing else (no pages, posts,
-navigation, or other settings).
+which touches media (additive), fonts, global styles, and the site icon + logo
+settings, and nothing else (no pages, posts, navigation, or other settings).
+
+The `template-parts` section is deliberately absent from that list: the
+production **footer** has been tester-owned since 20 Aug 2026 (Westminster
+edited the mailing-list line), so pushing it would overwrite their work. It
+still recolors via the palette slots. If the header part itself needs a
+change, push it alone with a direct REST POST of
+`content/template-parts/header.html` to `/wp/v2/template-parts/<theme>//header`
+rather than running the whole section.
 
 The home hero band has two approved looks; `bin/hero-variant` switches between
 them surgically (preserving editor changes elsewhere on the page):
