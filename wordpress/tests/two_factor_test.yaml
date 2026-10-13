@@ -1,0 +1,76 @@
+suite: two-factor policy mu-plugin
+templates:
+  - templates/deployment.yaml
+  - templates/configmap-two-factor.yaml
+  # referenced by deployment.yaml's checksum annotations, so they must be in
+  # this suite's render context
+  - templates/configmap-private-site.yaml
+  - templates/configmap-php-uploads.yaml
+values:
+  - ../../ops/production-values.yaml
+tests:
+  - it: mounts the two-factor policy mu-plugin from the chart's files/ source
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: two-factor
+            mountPath: /var/www/html/wp-content/mu-plugins/two-factor-policy.php
+            subPath: two-factor-policy.php
+      - template: templates/configmap-two-factor.yaml
+        matchRegex:
+          path: data["two-factor-policy.php"]
+          pattern: "Plugin Name: Two-Factor Policy"
+
+  - it: ships policy-only (enforcement off) by default
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENACT_2FA_ENFORCE
+            value: "0"
+
+  - it: passes enforcement through when twoFactor.enforce is true
+    set:
+      twoFactor.enforce: true
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENACT_2FA_ENFORCE
+            value: "1"
+
+  - it: renders the application-password allowlist as a JSON list
+    set:
+      twoFactor.applicationPasswordUsers:
+        - notch8-admin
+        - deploy-bot
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ENACT_2FA_APP_PASSWORD_USERS
+            value: '["notch8-admin","deploy-bot"]'
+
+  - it: omits the mu-plugin, its env, and its ConfigMap when twoFactor.enabled is false
+    set:
+      twoFactor.enabled: false
+    asserts:
+      - template: templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: two-factor
+      - template: templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: ENACT_2FA_ENFORCE
+      - template: templates/configmap-two-factor.yaml
+        hasDocuments:
+          count: 0

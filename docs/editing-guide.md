@@ -3,6 +3,22 @@
 Everything on this site is editable in the browser with no code and no
 developer. Log in at `/wp-admin` with your account.
 
+## Signing in
+
+The site asks for a code from an authenticator app (Microsoft Authenticator,
+Google Authenticator, 1Password, or similar) every time you log in, after your
+password.
+
+- **First time**: after your password, you land on your profile page. Under
+  Two-Factor Options, set up the authenticator app by scanning the QR code with
+  your phone and typing in the six-digit code it shows. Then generate backup
+  codes and keep them somewhere safe, such as a password manager. Until you
+  finish this, you can view the site but not edit it.
+- **Every time after**: password, then the current code from the app.
+- **New or lost phone**: use one of your backup codes to log in, then set the
+  app up again on your profile page. If you have no backup codes left, ask a
+  site administrator to reset two-factor on your account.
+
 ## The two editors you will use
 
 - **Posts and pages** (Posts > All Posts, Pages > All Pages): click a title to
@@ -37,8 +53,9 @@ developer. Log in at `/wp-admin` with your account.
 
 ## Things that revert if changed carelessly
 
-Nothing. There is no page builder, no custom theme code, and no plugin stack:
-this is stock WordPress with the bundled Twenty Twenty-Five theme, so every
+Nothing. There is no page builder, no custom theme code, and one plugin (Two
+Factor, for signing in): this is stock WordPress with the bundled Twenty
+Twenty-Five theme, so every
 screen matches WordPress's own documentation at https://wordpress.org/documentation/.
 If an edit goes wrong, each post/page keeps revisions (right-hand panel >
 Revisions) you can roll back to.

@@ -43,6 +43,12 @@ docker compose up -d            # WordPress on http://localhost:8080, MySQL alon
 sets `WP_ENVIRONMENT_TYPE=local` so application passwords work over plain http;
 that setting is intentionally absent from the k8s deployment, which is https.
 
+The compose file also mounts the two-factor policy mu-plugin (see "Two-factor
+authentication" below) with enforcement off and `admin` as the only login
+allowed to use application passwords. To try enforcement locally, install the
+plugin (`./bin/wp plugin install two-factor --activate`) and restart with
+`ENACT_2FA_ENFORCE=1 docker compose up -d`.
+
 ## Site content as code
 
 The `content/` directory is the seed for the whole site: block-markup HTML for
@@ -157,6 +163,68 @@ environment independently of anything above -- it's just a Helm value:
 That's it -- no plugin to uninstall, no file to delete. Setting
 `privateSite.enabled` back to `true` and redeploying restores the login wall.
 
+## Two-factor authentication
+
+Browser logins use two-factor authentication through the
+[Two Factor](https://wordpress.org/plugins/two-factor/) plugin, which is
+maintained by WordPress.org contributors. A must-use plugin,
+`wordpress/files/mu-plugins/two-factor-policy.php`, sets this site's policy
+around it. The chart mounts it into `wp-content/mu-plugins/` (controlled by the
+`twoFactor` values), and docker compose mounts the same file locally.
+
+What the policy does:
+
+- Methods are an authenticator app (TOTP) and backup codes. Email codes are
+  switched off because the pods have no outbound mail, so a code would never
+  arrive.
+- Application passwords work only for the logins listed in
+  `twoFactor.applicationPasswordUsers` (by default `notch8-admin`, the account
+  `bin/provision` uses). Requests that authenticate with one skip two-factor;
+  that is the API path. Application passwords issued to anyone else stop
+  working.
+- With `twoFactor.enforce: true`, a browser session that has not passed
+  two-factor gets view-only access. Someone without an authenticator app is sent
+  to their profile to set one up, and someone with one is sent to the code
+  prompt. The plugin cannot be deactivated from wp-admin. If it goes missing or
+  inactive anyway, every browser session drops to view-only until it is
+  restored, so a missing plugin never leaves password-only access to editing.
+
+The plugin lives in `wp-content/plugins/` on the persistent volume and updates
+in place from wp-admin, the same way WordPress core does today.
+
+### Turning it on for an environment
+
+1. Deploy with `twoFactor.enabled: true` and `twoFactor.enforce: false` (the
+   current state of both `ops/*-values.yaml` files).
+2. Install and activate the plugin, in wp-admin (Plugins > Add New, search for
+   "Two Factor") or over REST:
+   ```bash
+   curl -sS -u 'notch8-admin:<application password>' \
+     -H 'Content-Type: application/json' \
+     -d '{"slug": "two-factor", "status": "active"}' \
+     'https://<hostname>/?rest_route=/wp/v2/plugins'
+   ```
+3. Each account holder sets up an authenticator app under Users > Profile >
+   Two-Factor Options and saves their backup codes. Administrators go first.
+4. Set `twoFactor.enforce: true` in that environment's values file and run the
+   **Deploy** workflow.
+
+Anyone who has not enrolled by step 4 is sent to set it up at their next login
+and has view-only access until they do.
+
+### Recovery
+
+- **Lost phone**: sign in with a backup code, then set the app up again on the
+  profile page. Without backup codes, another administrator can turn two-factor
+  off for that account (Users > edit the user > Two-Factor Options), and the
+  person re-enrolls at their next login.
+- **Plugin missing or inactive** (everyone is view-only): reinstall it with the
+  step 2 command, or if it is installed but inactive, POST
+  `{"status": "active"}` to `?rest_route=/wp/v2/plugins/two-factor/two-factor`
+  with the same `notch8-admin` application password.
+- **Last resort**: set `twoFactor.enforce: false` and redeploy. That lifts the
+  gate without anyone needing cluster access. Set it back afterwards.
+
 ## Layout
 
 - `wordpress/` -- the Helm chart. WordPress is the parent chart; `wordpress/charts/mysql/`
@@ -183,6 +251,9 @@ That's it -- no plugin to uninstall, no file to delete. Setting
   Auto-deploys `staging` on push to `main`; `workflow_dispatch` also covers
   manual deploys to either environment.
 - `wordpress/tests/` -- the helm-unittest test suites.
+- `wordpress/files/mu-plugins/` -- must-use plugin sources the chart mounts
+  via ConfigMap (and docker compose mounts locally); see "Two-factor
+  authentication".
 
 ## Secrets
 
