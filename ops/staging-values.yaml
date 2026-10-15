@@ -10,3 +10,9 @@ externalSecret:
 
 privateSite:
   enabled: true
+
+# Flip enforce to true only after the Two Factor plugin is installed here and
+# the administrators have enrolled (README.md, "Two-factor authentication").
+twoFactor:
+  enabled: true
+  enforce: false

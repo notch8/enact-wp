@@ -5,6 +5,7 @@ templates:
   # referenced by deployment.yaml's checksum annotations, so it must be in
   # this suite's render context
   - templates/configmap-php-uploads.yaml
+  - templates/configmap-two-factor.yaml
 values:
   - ../../ops/staging-values.yaml
 tests:

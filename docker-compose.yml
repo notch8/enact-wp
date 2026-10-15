@@ -15,8 +15,17 @@ services:
       # declared local; needed so bin/provision can talk to http://localhost.
       WORDPRESS_CONFIG_EXTRA: |
         define('WP_ENVIRONMENT_TYPE', 'local');
+      # Two-factor policy mu-plugin settings, mirroring the chart's twoFactor
+      # values. Enforcement is off unless you opt in:
+      #   ENACT_2FA_ENFORCE=1 docker compose up -d
+      ENACT_2FA_ENFORCE: "${ENACT_2FA_ENFORCE:-0}"
+      ENACT_2FA_APP_PASSWORD_USERS: '["admin"]'
     volumes:
       - wp_data:/var/www/html
+      # The same mu-plugin source the chart mounts in k8s. A directory mount
+      # rather than a single-file one, so editor saves (which replace the
+      # file) show up in the running container.
+      - ./wordpress/files/mu-plugins:/var/www/html/wp-content/mu-plugins:ro
     configs:
       - source: php_uploads_ini
         target: /usr/local/etc/php/conf.d/uploads.ini

@@ -55,6 +55,26 @@ phpUploads:
 privateSite:
   enabled: true
 
+# Two-factor authentication via the Two Factor plugin
+# (https://wordpress.org/plugins/two-factor/), governed by a must-use plugin
+# rendered from files/mu-plugins/two-factor-policy.php. See README.md "Two-factor
+# authentication" for the rollout order and break-glass recovery.
+twoFactor:
+  # Mounts the policy mu-plugin: authenticator app + backup codes only (no
+  # email codes; the pods have no outbound mail), and application passwords
+  # limited to applicationPasswordUsers. Harmless before the plugin is installed.
+  enabled: true
+  # Requires every browser session to pass two-factor before it can edit
+  # anything, keeps the plugin from being deactivated in wp-admin, and fails
+  # closed (view-only for everyone) if the plugin goes missing. Application
+  # password requests (bin/provision, other API use) are exempt. Turn on only
+  # after the plugin is installed and the admins have enrolled.
+  enforce: false
+  # User logins allowed to use application passwords. Everyone else's are
+  # disabled, including any already issued.
+  applicationPasswordUsers:
+    - notch8-admin
+
 # Pulls MySQL credentials from 1Password via the enact cluster's existing
 # `onepassword` ClusterSecretStore. Populates a single Secret consumed
 # directly by both this chart's WordPress deployment and the nested mysql

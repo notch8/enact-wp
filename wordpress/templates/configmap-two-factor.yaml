@@ -1,0 +1,14 @@
+{{- if .Values.twoFactor.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-two-factor
+  labels:
+    app.kubernetes.io/name: wordpress
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # Source lives in files/mu-plugins/ (not inline here) so docker-compose.yml can mount
+  # the same file for local testing.
+  two-factor-policy.php: |
+{{ .Files.Get "files/mu-plugins/two-factor-policy.php" | indent 4 }}
+{{- end }}

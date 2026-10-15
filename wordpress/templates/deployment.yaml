@@ -19,12 +19,13 @@ spec:
         app.kubernetes.io/name: wordpress
         app.kubernetes.io/instance: {{ .Release.Name }}
       annotations:
-        # Both ConfigMaps are consumed via subPath mounts, which Kubernetes
+        # These ConfigMaps are consumed via subPath mounts, which Kubernetes
         # never live-updates in a running pod (kubernetes/kubernetes#50345).
         # Hashing their rendered content into the pod template forces a
-        # rollout whenever either changes.
+        # rollout whenever any of them changes.
         checksum/private-site: {{ include (print $.Template.BasePath "/configmap-private-site.yaml") . | sha256sum }}
         checksum/php-uploads: {{ include (print $.Template.BasePath "/configmap-php-uploads.yaml") . | sha256sum }}
+        checksum/two-factor: {{ include (print $.Template.BasePath "/configmap-two-factor.yaml") . | sha256sum }}
     spec:
       containers:
         - name: wordpress
@@ -42,6 +43,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.secretName }}
                   key: wordpress-password
+            {{- if .Values.twoFactor.enabled }}
+            # Read by the two-factor-policy mu-plugin.
+            - name: ENACT_2FA_ENFORCE
+              value: {{ ternary "1" "0" .Values.twoFactor.enforce | quote }}
+            - name: ENACT_2FA_APP_PASSWORD_USERS
+              value: {{ .Values.twoFactor.applicationPasswordUsers | toJson | quote }}
+            {{- end }}
           ports:
             - containerPort: 80
               name: http
@@ -58,6 +66,11 @@ spec:
               mountPath: /var/www/html/wp-content/mu-plugins/private-site.php
               subPath: private-site.php
             {{- end }}
+            {{- if .Values.twoFactor.enabled }}
+            - name: two-factor
+              mountPath: /var/www/html/wp-content/mu-plugins/two-factor-policy.php
+              subPath: two-factor-policy.php
+            {{- end }}
       volumes:
         - name: wp-content
           {{- if .Values.persistence.enabled }}
@@ -73,4 +86,9 @@ spec:
         - name: private-site
           configMap:
             name: {{ .Release.Name }}-private-site
+        {{- end }}
+        {{- if .Values.twoFactor.enabled }}
+        - name: two-factor
+          configMap:
+            name: {{ .Release.Name }}-two-factor
         {{- end }}
