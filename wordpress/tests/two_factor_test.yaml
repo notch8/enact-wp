@@ -24,6 +24,8 @@ tests:
           pattern: "Plugin Name: Two-Factor Policy"
 
   - it: ships policy-only (enforcement off) by default
+    set:
+      twoFactor.enforce: false
     asserts:
       - template: templates/deployment.yaml
         contains:
