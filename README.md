@@ -125,8 +125,7 @@ always a deliberate action.
 Staging deploys itself on every merge to `main`, once checks pass. For a
 manual deploy of either environment (including production), trigger the
 **Deploy** workflow from the Actions tab and choose `staging` or
-`production` -- same as before, unaffected by the auto-deploy trigger. There's
-also an optional tmate-debug toggle there for troubleshooting a stuck deploy.
+`production` -- same as before, unaffected by the auto-deploy trigger.
 
 ### One-time setup, before the first deploy of a new environment: the
 `enact-wp-staging` / `enact-wp-production` namespaces must exist before
