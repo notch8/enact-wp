@@ -75,6 +75,25 @@ record of how the site was born, not as the source of truth. Second, it never
 touches credentials: passwords printed by the scripts go to 1Password and
 nowhere else.
 
+### Tester accounts
+
+`site.json`'s `testers` array stays empty in git -- this repo is public, and a
+real tester's name, email and role is identifying information a committed file
+would disclose permanently, same reasoning as never committing credentials.
+`bin/provision --testers` reads `ENACT_TESTERS_JSON` instead, an env var
+holding the same array shape (`[{"username", "display_name", "role",
+"email"}, ...]`), falling back to `site.json` only if it's unset:
+
+```bash
+ENACT_TESTERS_JSON=$(op read "op://enact-production/enact-wp-testers/testers") \
+  bin/provision --base-url https://enact-wp-production.enacthyku.com \
+  --user notch8-admin --app-password '...' --testers
+```
+
+Store the array as a single JSON-text field on a 1Password item (e.g.
+`enact-wp-testers` in the environment's vault) rather than individual fields,
+so it round-trips through `op read` as-is.
+
 ## Bootstrapping a new environment
 
 For a fresh k8s environment (production was set up this way; a wiped staging

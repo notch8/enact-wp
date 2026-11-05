@@ -10,8 +10,12 @@ updated in place. Works against any environment:
 
 Uses only the Python 3 standard library. The REST API is reached via
 ?rest_route= so it works before and after pretty permalinks are enabled.
---testers additionally creates the tester accounts listed in site.json and
-prints generated passwords to stdout (they are never stored anywhere else).
+--testers additionally creates the tester accounts listed in ENACT_TESTERS_JSON
+(same shape as site.json's old "testers" array), falling back to site.json's
+own "testers" key if that's unset. Names, emails and roles of real testers are
+identifying information this repo is public, so source it from 1Password
+rather than committing it -- see README.md "Tester accounts". Generated
+passwords print to stdout and are never stored anywhere else.
 
 --only SECTION[,SECTION...] applies a subset of sections instead of the whole
 seed. This is how changes are deployed to an environment where editors own the
@@ -23,7 +27,7 @@ Example -- apply branding without touching content:
     bin/provision --base-url ... --user ... --app-password '...' \
         --only media,fonts,template-parts,global-styles,site-branding
 """
-import argparse, base64, json, mimetypes, re, secrets, string, sys, urllib.error, urllib.parse, urllib.request
+import argparse, base64, json, mimetypes, os, re, secrets, string, sys, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 CONTENT = Path(__file__).resolve().parent.parent / "content"
@@ -360,8 +364,10 @@ def main():
 
     # --- testers ---------------------------------------------------------------
     if args.testers:
+        testers_json = os.environ.get("ENACT_TESTERS_JSON")
+        testers = json.loads(testers_json) if testers_json else site.get("testers", [])
         log("Tester accounts:")
-        for t in site["testers"]:
+        for t in testers:
             existing = wp.get("/wp/v2/users", {"search": t["username"], "context": "edit"})
             match = [u for u in existing if u.get("username") == t["username"] or u.get("slug") == t["username"]]
             pw = gen_password()

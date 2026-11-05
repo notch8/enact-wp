@@ -86,11 +86,7 @@
       ]
     }
   ],
-  "testers": [
-    { "username": "nick", "display_name": "Nick Steinwachs", "role": "administrator", "email": "nick+enact-wp@notch8.com" },
-    { "username": "enact-admin", "display_name": "Enact Admin", "role": "administrator", "email": "nick+enact-admin@notch8.com" },
-    { "username": "enact-editor", "display_name": "Enact Editor", "role": "editor", "email": "nick+enact-editor@notch8.com" }
-  ],
+  "testers": [],
   "cleanup": {
     "delete_page_slugs": ["sample-page"],
     "delete_post_slugs": ["hello-world"],
