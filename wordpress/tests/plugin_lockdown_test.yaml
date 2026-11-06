@@ -21,6 +21,36 @@ tests:
             mountPath: /var/www/html/wp-content/uploads
             subPath: wp-content/uploads
 
+  - it: sets fsGroup so www-data can write a subPath dir kubelet creates as root
+    asserts:
+      - template: templates/deployment.yaml
+        equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 33
+            fsGroupChangePolicy: OnRootMismatch
+
+  - it: sources the auth keys and salts from the shared secret, not generated values
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WORDPRESS_AUTH_KEY
+            valueFrom:
+              secretKeyRef:
+                name: wordpress-db-credentials
+                key: auth-key
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WORDPRESS_NONCE_SALT
+            valueFrom:
+              secretKeyRef:
+                name: wordpress-db-credentials
+                key: nonce-salt
+
   - it: disables wp-admin plugin/theme install, update, and file editing by default
     asserts:
       - template: templates/deployment.yaml

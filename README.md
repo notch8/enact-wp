@@ -292,9 +292,14 @@ Database credentials never touch GitHub. Each environment's `ExternalSecret`
 - `wordpress-mysql-staging-enact`
 - `wordpress-mysql-production-enact`
 
-Each item needs `root-password` and `wordpress-password` fields. The resulting
-Kubernetes Secret is mounted directly into both the WordPress and MySQL pods --
-no duplication into GitHub Actions secrets.
+Each item needs `root-password`, `wordpress-password`, and the eight WordPress
+auth keys/salts (`auth-key`, `secure-auth-key`, `logged-in-key`, `nonce-key`,
+`auth-salt`, `secure-auth-salt`, `logged-in-salt`, `nonce-salt`) -- since
+`/var/www/html` no longer persists, `wp-config.php` is regenerated on every
+pod start, and these have to come from the secret rather than
+docker-entrypoint.sh's own random defaults, or every restart logs everyone
+out. The resulting Kubernetes Secret is mounted directly into both the
+WordPress and MySQL pods -- no duplication into GitHub Actions secrets.
 
 The only thing GitHub Actions holds is `KUBECONFIG_FILE` per environment, a
 namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
