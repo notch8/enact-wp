@@ -1,7 +1,5 @@
 # Matches what's actually running today (WP 7.1.4, PHP 8.3.x) -- the chart's
 # image.repository/image.tag get overridden at deploy time to this image.
-# WP_VERSION also drives the en_GB language pack URL below, so it's a single
-# ARG rather than duplicated as a literal in both places.
 ARG WP_VERSION=7.1.4
 FROM wordpress:${WP_VERSION}-php8.3-apache@sha256:6888208af0e3cb93af427c13a434273b07ba353ce9e2d5a29abe3031bb28ea3a
 
@@ -22,9 +20,8 @@ RUN apt-get update \
 
 # Two Factor (https://wordpress.org/plugins/two-factor/), pinned and
 # checksum-verified. Staged where docker-entrypoint.sh seeds a fresh/empty
-# /var/www/html on first boot -- inert on an already-provisioned volume
-# (today's staging/production) until notch8/notch8-ops#634's PVC migration
-# stops persisting the rest of wp-content underneath it.
+# /var/www/html on every pod start (only wp-content/uploads persists; see
+# README.md "Versions").
 ARG TWO_FACTOR_VERSION=0.17.0
 ARG TWO_FACTOR_SHA256=4d1b0f8e5d82e24876c2b4e86f119122e28a8dbaf76dfde495173226c3356f37
 RUN curl -fsSL -o /tmp/two-factor.zip "https://downloads.wordpress.org/plugin/two-factor.${TWO_FACTOR_VERSION}.zip" \
