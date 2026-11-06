@@ -14,7 +14,7 @@
     {
       "customType": "regex",
       "description": "Tracks the Two Factor plugin version pinned in Dockerfile. The matching TWO_FACTOR_SHA256 isn't published anywhere Renovate can read -- .github/workflows/fix-dockerfile-checksums.yaml recomputes and commits it on any PR that changes this.",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": ["/^Dockerfile$/"],
       "matchStrings": ["ARG TWO_FACTOR_VERSION=(?<currentValue>\\S+)"],
       "datasourceTemplate": "custom.wordpress-plugin",
       "packageNameTemplate": "two-factor",
