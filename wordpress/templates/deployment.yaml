@@ -27,6 +27,13 @@ spec:
         checksum/php-uploads: {{ include (print $.Template.BasePath "/configmap-php-uploads.yaml") . | sha256sum }}
         checksum/two-factor: {{ include (print $.Template.BasePath "/configmap-two-factor.yaml") . | sha256sum }}
     spec:
+      # On a fresh PVC (or any volume without an existing wp-content/uploads
+      # directory), kubelet creates the subPath dir as root:root -- Apache
+      # (www-data) can't write to it otherwise. OnRootMismatch skips the
+      # recursive chown once the volume root is already correct.
+      securityContext:
+        fsGroup: 33
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: wordpress
           image: "{{ .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
@@ -43,6 +50,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.secretName }}
                   key: wordpress-password
+            # wp-config.php is regenerated on every pod start (nothing in
+            # /var/www/html persists), so without these docker-entrypoint.sh
+            # fills in fresh random values each time -- logging everyone out
+            # and breaking any in-progress Two Factor login on every restart.
+            {{- range list "AUTH_KEY" "SECURE_AUTH_KEY" "LOGGED_IN_KEY" "NONCE_KEY" "AUTH_SALT" "SECURE_AUTH_SALT" "LOGGED_IN_SALT" "NONCE_SALT" }}
+            - name: WORDPRESS_{{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.global.secretName }}
+                  key: {{ . | lower | replace "_" "-" }}
+            {{- end }}
             {{- if .Values.twoFactor.enabled }}
             # Read by the two-factor-policy mu-plugin.
             - name: ENACT_2FA_ENFORCE
@@ -50,14 +68,29 @@ spec:
             - name: ENACT_2FA_APP_PASSWORD_USERS
               value: {{ .Values.twoFactor.applicationPasswordUsers | toJson | quote }}
             {{- end }}
+            {{- if .Values.pluginLockdown.enabled }}
+            # Core/plugins/mu-plugins all come from the image now (wp-content/
+            # uploads is the only persisted path below), so there's nothing
+            # for wp-admin's install/update/file-editor screens to act on
+            # that would survive a restart anyway. See README.md "Versions".
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('DISALLOW_FILE_MODS', true);
+                define('DISALLOW_FILE_EDIT', true);
+            {{- end }}
           ports:
             - containerPort: 80
               name: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            # Only uploads persist -- core, plugins, and mu-plugins all come
+            # from the image (or the mu-plugin ConfigMaps below) fresh on
+            # every pod start. subPath exposes just that subdirectory of the
+            # existing PVC; nothing needed to move or copy it there.
             - name: wp-content
-              mountPath: /var/www/html
+              mountPath: /var/www/html/wp-content/uploads
+              subPath: wp-content/uploads
             - name: php-uploads
               mountPath: /usr/local/etc/php/conf.d/uploads.ini
               subPath: uploads.ini
