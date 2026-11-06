@@ -208,8 +208,14 @@ What the policy does:
   inactive anyway, every browser session drops to view-only until it is
   restored, so a missing plugin never leaves password-only access to editing.
 
-The plugin lives in `wp-content/plugins/` on the persistent volume and updates
-in place from wp-admin, the same way WordPress core does today.
+`Dockerfile` now bakes a pinned, checksum-verified copy of the plugin into
+the image (`TWO_FACTOR_VERSION`), the same way WordPress core itself ships.
+This is inert on staging and production today: `/var/www/html` is still
+entirely on the persistent volume, so the copy installed there via wp-admin
+keeps shadowing the image's copy, and still updates the same way core does.
+It takes over -- and stops being updatable from wp-admin -- once the PVC
+migration (notch8/notch8-ops#634) moves the volume to `wp-content/uploads`
+only. A brand-new environment gets the pinned version from first boot.
 
 ### Turning it on for an environment
 
@@ -304,7 +310,14 @@ to GHCR. The image tag itself is content-addressed -- `bin/image-tag` hashes
 `Dockerfile`, so a commit that doesn't touch it reuses the image already
 published for that content, and `deploy.yaml`'s `build-image` job skips
 rebuilding it. Bump the `FROM` line (and its digest) to pick up a new
-WordPress or PHP release.
+WordPress or PHP release; bump the en_GB language pack's URL/checksum at the
+same time, since it's pinned to match.
+
+The image also bakes in a pinned, checksum-verified copy of the Two Factor
+plugin (`TWO_FACTOR_VERSION`/`TWO_FACTOR_SHA256`) and the en_GB core language
+pack, staged where `docker-entrypoint.sh` seeds a fresh `/var/www/html` --
+see "Two-factor authentication" for why this is currently inert on staging
+and production.
 
 `mysql` is pinned the same way (`mysql.image.tag` in
 `wordpress/values.yaml`), matching what's actually running rather than the
