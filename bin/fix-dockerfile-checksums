@@ -24,9 +24,8 @@ if [ "$expected_two_factor_sha256" != "$current_two_factor_sha256" ]; then
     echo "Updated TWO_FACTOR_SHA256 for ${two_factor_version}: ${expected_two_factor_sha256}"
 fi
 
-wp_version=$(sed -n 's/^FROM wordpress:\([0-9.]*\)-.*/\1/p' Dockerfile)
-lang_pack_url=$(sed -n 's/.*curl -fsSL -o \/tmp\/en_GB\.zip "\(.*\)".*/\1/p' Dockerfile)
-expected_lang_sha256=$(curl -fsSL "$lang_pack_url" | $hash_cmd | cut -d' ' -f1)
+wp_version=$(sed -n 's/^ARG WP_VERSION=//p' Dockerfile)
+expected_lang_sha256=$(curl -fsSL "https://downloads.wordpress.org/translation/core/${wp_version}/en_GB.zip" | $hash_cmd | cut -d' ' -f1)
 current_lang_sha256=$(sed -n 's/^ARG WP_LANG_EN_GB_SHA256=//p' Dockerfile)
 if [ "$expected_lang_sha256" != "$current_lang_sha256" ]; then
     sed -i.bak "s/^ARG WP_LANG_EN_GB_SHA256=.*/ARG WP_LANG_EN_GB_SHA256=${expected_lang_sha256}/" Dockerfile
