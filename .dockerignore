@@ -1,0 +1,10 @@
+.claude
+# Ignore environment files that might include secrets
+.env*
+.git
+.github
+bin
+# Not needed to build the image, and content/ is the bulk of the repo's size.
+content
+docs
+README.md

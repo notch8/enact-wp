@@ -1,0 +1,17 @@
+# CI-only overlay (docker compose -f docker-compose.yml -f docker-compose.ci.yml
+# build wordpress): adds a GHCR-backed BuildKit cache so a Dockerfile change
+# doesn't re-pull the base image from Docker Hub on every build. Not used
+# locally -- cache_to needs push access to ghcr.io, which local dev doesn't
+# have, and isn't worth it for an image this rarely rebuilt (bin/image-tag
+# skips the build entirely when the Dockerfile hasn't changed).
+#
+# :buildcache is an intentionally mutable, non-deployable tag -- unrelated to
+# the content-addressed tags image.tag and docker-compose.yml's `image:`
+# actually deploy.
+services:
+  wordpress:
+    build:
+      cache_from:
+        - type=registry,ref=ghcr.io/notch8/enact-wp:buildcache
+      cache_to:
+        - type=registry,ref=ghcr.io/notch8/enact-wp:buildcache,mode=max

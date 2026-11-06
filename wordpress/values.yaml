@@ -1,16 +1,13 @@
 # Vanilla WordPress + its own MySQL, for the Enact cluster.
 #
-# Image tags are intentionally the floating "latest" / "lts" pointers rather
-# than a pinned patch version -- this is the normal way both of these official
-# images are run, and it keeps the deployment on "most current stable" without
-# needing manual tag bumps. WordPress's own dashboard handles in-app core
-# updates independently of the container tag anyway, so pinning the image tag
-# wouldn't fully freeze the WP version either.
 
 image:
-  repository: wordpress
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/notch8/enact-wp
+  # Content-addressed (see bin/image-tag), not a release version -- always
+  # set explicitly via --set at deploy time, never committed here.
+  tag: ""
+  # Safe since tags are content-addressed and therefore immutable.
+  pullPolicy: IfNotPresent
 
 replicaCount: 1
 

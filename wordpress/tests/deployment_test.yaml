@@ -8,6 +8,8 @@ templates:
   - templates/configmap-two-factor.yaml
 values:
   - ../../ops/staging-values.yaml
+set:
+  image.tag: test
 tests:
   - it: mounts the private-site mu-plugin by default
     asserts:

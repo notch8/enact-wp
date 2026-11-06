@@ -4,21 +4,24 @@ description: "Lint, render, schema-validate, and unit-test the wordpress chart; 
 runs:
   using: "composite"
   steps:
+    # image.tag is content-addressed and set by deploy.yaml's build-image job
+    # (bin/image-tag), not stored in ops/*-values.yaml -- these checks only
+    # need *a* value to satisfy the chart's `required`.
     - name: helm lint (staging values)
       shell: bash
-      run: helm lint ./wordpress --values ops/staging-values.yaml
+      run: helm lint ./wordpress --values ops/staging-values.yaml --set image.tag=ci
 
     - name: helm lint (production values)
       shell: bash
-      run: helm lint ./wordpress --values ops/production-values.yaml
+      run: helm lint ./wordpress --values ops/production-values.yaml --set image.tag=ci
 
     - name: helm template (staging values)
       shell: bash
-      run: helm template enact-wp-staging ./wordpress --values ops/staging-values.yaml > /tmp/enact-wp-staging.rendered.yaml
+      run: helm template enact-wp-staging ./wordpress --values ops/staging-values.yaml --set image.tag=ci > /tmp/enact-wp-staging.rendered.yaml
 
     - name: helm template (production values)
       shell: bash
-      run: helm template enact-wp-production ./wordpress --values ops/production-values.yaml > /tmp/enact-wp-production.rendered.yaml
+      run: helm template enact-wp-production ./wordpress --values ops/production-values.yaml --set image.tag=ci > /tmp/enact-wp-production.rendered.yaml
 
     - name: Install kubeconform
       shell: bash

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# Content-addressed tag for the image built from ./Dockerfile. Deterministic
+# from the Dockerfile alone (not the git SHA), so a commit that doesn't touch
+# it reuses the same tag -- deploy.yaml skips rebuilding, and a redeploy of
+# an unchanged commit is a no-op pull of what's already there.
+#
+# Revisit this once the Dockerfile grows build args (docker-compose.yml's
+# services.wordpress.build.args) -- hash those in too, not the whole compose
+# file, which also holds unrelated local-dev settings.
+
+set -eu
+
+if command -v sha256sum >/dev/null 2>&1; then
+    hash_cmd="sha256sum"
+else
+    hash_cmd="shasum -a 256"
+fi
+
+$hash_cmd < Dockerfile | cut -c1-12

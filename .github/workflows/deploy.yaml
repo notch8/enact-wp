@@ -47,8 +47,54 @@ jobs:
             echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
           fi
 
+  # Tag is content-addressed (bin/image-tag), not the git SHA -- a commit
+  # that doesn't touch Dockerfile/docker-compose.build.yml reuses the image
+  # already published for that content, so most runs skip straight to deploy.
+  build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # `docker manifest inspect` sits behind this CLI flag on some Docker
+      # versions.
+      DOCKER_CLI_EXPERIMENTAL: enabled
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: tag
+        run: echo "tag=$(./bin/image-tag)" >> "$GITHUB_OUTPUT"
+      - id: exists
+        name: Check whether this content was already built
+        run: |
+          if docker manifest inspect "ghcr.io/notch8/enact-wp:${{ steps.tag.outputs.tag }}" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to GHCR
+        if: steps.exists.outputs.skip == 'false'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Same build contributors run locally (docker-compose.yml), so there's
+      # one definition of this image, not a CI-only copy of it.
+      - name: Build and push
+        if: steps.exists.outputs.skip == 'false'
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+          GIT_REVISION: ${{ github.sha }}
+          COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+        run: |
+          docker compose build wordpress
+          docker compose push wordpress
+
   deploy:
-    needs: [checks, resolve-environment]
+    needs: [checks, resolve-environment, build-image]
     runs-on: ubuntu-latest
     container: dtzar/helm-kubectl:3.9.4
     environment: ${{ needs.resolve-environment.outputs.environment }}
@@ -56,6 +102,7 @@ jobs:
       DEPLOY_ENVIRONMENT: ${{ needs.resolve-environment.outputs.environment }}
       HELM_RELEASE_NAME: enact-wp-${{ needs.resolve-environment.outputs.environment }}
       KUBE_NAMESPACE: enact-wp-${{ needs.resolve-environment.outputs.environment }}
+      IMAGE_TAG: ${{ needs.build-image.outputs.tag }}
       KUBECONFIG_FILE: ${{ secrets.KUBECONFIG_FILE }}
       KUBECONFIG: ./kubeconfig.yml
     steps:
@@ -64,4 +111,4 @@ jobs:
       - name: Do deploy
         run: |
           echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
-          HELM_EXTRA_ARGS="--values ops/${DEPLOY_ENVIRONMENT}-values.yaml" ./bin/helm_deploy "$HELM_RELEASE_NAME" "$KUBE_NAMESPACE"
+          HELM_EXTRA_ARGS="--values ops/${DEPLOY_ENVIRONMENT}-values.yaml --set image.tag=${IMAGE_TAG}" ./bin/helm_deploy "$HELM_RELEASE_NAME" "$KUBE_NAMESPACE"
