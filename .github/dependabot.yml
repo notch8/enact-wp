@@ -4,3 +4,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Tracks Dockerfile's FROM line (tag + digest). Doesn't see the Two Factor
+  # plugin's pinned ARG/checksum -- no ecosystem understands that -- so that
+  # stays a manual bump; see README.md "Versions".
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

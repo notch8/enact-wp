@@ -293,8 +293,12 @@ namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 
 ## Versions
 
-Both images use floating tags (`wordpress:latest`, `mysql:lts`) rather than a
-pinned patch version -- this is the normal way to run these official images and
-keeps the deployment on the current stable release without manual tag bumps.
-WordPress's own dashboard handles in-app core updates independently of the
-container tag regardless.
+`mysql` is pinned by tag and digest (`mysql.image.tag` in
+`wordpress/values.yaml`), not the floating `lts` tag -- matching what's
+actually running rather than the ticket-era assumption that `lts` meant 8.4;
+it's moved on to the 9.x line since. Dependabot (`.github/dependabot.yml`,
+`docker` ecosystem) opens a PR when a newer digest exists for either this or
+the (separately tracked) WordPress image's own pin.
+
+`wordpress` still uses the floating `latest` tag here; pinning it to a built,
+content-tagged image is tracked separately (notch8/notch8-ops#634).
