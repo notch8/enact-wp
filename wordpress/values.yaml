@@ -95,9 +95,9 @@ global:
 mysql:
   image:
     repository: mysql
-    # Matches what's actually running (9.7.2) -- lts currently tracks the
-    # 9.7.x line. Bump this (and its digest) to track a new LTS release.
-    tag: "9.7@sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8"
+    # Matches what's actually running (9.7.2). Renovate's helm-values manager
+    # proposes bumps to this tag and its digest.
+    tag: "9.7.2@sha256:e2fa358a74ac81148e7e27d9433e4c0ab62133de8ea4428b4f39a51a4ba7d07f"
     pullPolicy: IfNotPresent
   resources:
     requests:

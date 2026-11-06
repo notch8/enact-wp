@@ -4,8 +4,9 @@
 # language pack) from the versions/URLs actually written there, and corrects
 # any that don't match -- nothing publishes these as a value Renovate (or a
 # human bumping TWO_FACTOR_VERSION by hand) could just read, so this is the
-# other half of keeping them pinned correctly. Always exits 0; the caller
-# checks `git diff` to see whether anything actually changed.
+# other half of keeping them pinned correctly. Exits non-zero (via set -e) if
+# a download fails; otherwise the caller checks `git diff` to see whether
+# anything actually changed.
 
 set -eu
 
@@ -16,7 +17,10 @@ else
 fi
 
 two_factor_version=$(sed -n 's/^ARG TWO_FACTOR_VERSION=//p' Dockerfile)
-expected_two_factor_sha256=$(curl -fsSL "https://downloads.wordpress.org/plugin/two-factor.${two_factor_version}.zip" | $hash_cmd | cut -d' ' -f1)
+two_factor_zip=$(mktemp)
+curl -fsSL "https://downloads.wordpress.org/plugin/two-factor.${two_factor_version}.zip" -o "$two_factor_zip"
+expected_two_factor_sha256=$($hash_cmd "$two_factor_zip" | cut -d' ' -f1)
+rm "$two_factor_zip"
 current_two_factor_sha256=$(sed -n 's/^ARG TWO_FACTOR_SHA256=//p' Dockerfile)
 if [ "$expected_two_factor_sha256" != "$current_two_factor_sha256" ]; then
     sed -i.bak "s/^ARG TWO_FACTOR_SHA256=.*/ARG TWO_FACTOR_SHA256=${expected_two_factor_sha256}/" Dockerfile
@@ -25,7 +29,10 @@ if [ "$expected_two_factor_sha256" != "$current_two_factor_sha256" ]; then
 fi
 
 wp_version=$(sed -n 's/^ARG WP_VERSION=//p' Dockerfile)
-expected_lang_sha256=$(curl -fsSL "https://downloads.wordpress.org/translation/core/${wp_version}/en_GB.zip" | $hash_cmd | cut -d' ' -f1)
+lang_zip=$(mktemp)
+curl -fsSL "https://downloads.wordpress.org/translation/core/${wp_version}/en_GB.zip" -o "$lang_zip"
+expected_lang_sha256=$($hash_cmd "$lang_zip" | cut -d' ' -f1)
+rm "$lang_zip"
 current_lang_sha256=$(sed -n 's/^ARG WP_LANG_EN_GB_SHA256=//p' Dockerfile)
 if [ "$expected_lang_sha256" != "$current_lang_sha256" ]; then
     sed -i.bak "s/^ARG WP_LANG_EN_GB_SHA256=.*/ARG WP_LANG_EN_GB_SHA256=${expected_lang_sha256}/" Dockerfile
