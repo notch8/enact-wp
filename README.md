@@ -317,9 +317,9 @@ The image also bakes in a pinned, checksum-verified copy of the Two Factor
 plugin (`TWO_FACTOR_VERSION`/`TWO_FACTOR_SHA256`) and the en_GB core language
 pack (`WP_LANG_EN_GB_SHA256`), staged where `docker-entrypoint.sh` seeds a
 fresh `/var/www/html`. Neither checksum is published anywhere Renovate (or a
-human bumping either version by hand) could just read -- a companion
-workflow (notch8/enact-wp#20) recomputes and commits both on any PR that
-touches `Dockerfile`.
+human bumping either version by hand) could just read --
+`.github/workflows/fix-dockerfile-checksums.yaml` recomputes and commits
+both on any PR that touches `Dockerfile`.
 
 Only `wp-content/uploads` persists (`persistence` in `wordpress/values.yaml`)
 -- core, plugins, and mu-plugins all come from the image on every pod start,
