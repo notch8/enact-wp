@@ -8,6 +8,8 @@ templates:
   - templates/configmap-php-uploads.yaml
 values:
   - ../../ops/production-values.yaml
+set:
+  image.tag: test
 tests:
   - it: mounts the two-factor policy mu-plugin from the chart's files/ source
     asserts:

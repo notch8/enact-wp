@@ -1,9 +1,22 @@
-# Local development mirror of the k8s deployment: same official images
-# (wordpress:latest, mysql:lts), plus the official wp-cli companion image.
-# Usage: docker compose up -d, then ./bin/local-setup (see README).
+# Local development mirror of the k8s deployment. wordpress builds the same
+# Dockerfile CI publishes to GHCR (see "Versions" in README.md), so local dev
+# runs the pinned WordPress/PHP CI ships, not whatever wordpress:latest
+# floats to. mysql still uses the official, floating mysql:lts.
+#
+# Usage: docker compose up -d --build, then ./bin/local-setup (see README).
+# --build is cheap once cached; it's there so a Dockerfile change always
+# takes effect instead of silently reusing a stale local image.
 services:
   wordpress:
-    image: wordpress:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Forwards the host env var of the same name if set (CI sets it to the
+      # commit SHA); omitted entirely otherwise, so the Dockerfile's own
+      # ARG default applies for a plain local build.
+      args:
+        - GIT_REVISION
+    image: ghcr.io/notch8/enact-wp:${IMAGE_TAG:-dev}
     ports:
       - "8080:80"
     environment:
