@@ -50,14 +50,29 @@ spec:
             - name: ENACT_2FA_APP_PASSWORD_USERS
               value: {{ .Values.twoFactor.applicationPasswordUsers | toJson | quote }}
             {{- end }}
+            {{- if .Values.pluginLockdown.enabled }}
+            # Core/plugins/mu-plugins all come from the image now (wp-content/
+            # uploads is the only persisted path below), so there's nothing
+            # for wp-admin's install/update/file-editor screens to act on
+            # that would survive a restart anyway. See README.md "Versions".
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('DISALLOW_FILE_MODS', true);
+                define('DISALLOW_FILE_EDIT', true);
+            {{- end }}
           ports:
             - containerPort: 80
               name: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            # Only uploads persist -- core, plugins, and mu-plugins all come
+            # from the image (or the mu-plugin ConfigMaps below) fresh on
+            # every pod start. subPath exposes just that subdirectory of the
+            # existing PVC; nothing needed to move or copy it there.
             - name: wp-content
-              mountPath: /var/www/html
+              mountPath: /var/www/html/wp-content/uploads
+              subPath: wp-content/uploads
             - name: php-uploads
               mountPath: /usr/local/etc/php/conf.d/uploads.ini
               subPath: uploads.ini

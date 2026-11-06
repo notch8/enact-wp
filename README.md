@@ -208,26 +208,25 @@ What the policy does:
   inactive anyway, every browser session drops to view-only until it is
   restored, so a missing plugin never leaves password-only access to editing.
 
-`Dockerfile` now bakes a pinned, checksum-verified copy of the plugin into
-the image (`TWO_FACTOR_VERSION`), the same way WordPress core itself ships.
-This is inert on staging and production today: `/var/www/html` is still
-entirely on the persistent volume, so the copy installed there via wp-admin
-keeps shadowing the image's copy, and still updates the same way core does.
-It takes over -- and stops being updatable from wp-admin -- once the PVC
-migration (notch8/notch8-ops#634) moves the volume to `wp-content/uploads`
-only. A brand-new environment gets the pinned version from first boot.
+`Dockerfile` bakes a pinned, checksum-verified copy of the plugin into the
+image (`TWO_FACTOR_VERSION`), the same way WordPress core itself ships, and
+it's authoritative: only `wp-content/uploads` is on the persistent volume
+(see "Versions"), so every pod start gets exactly this version regardless of
+anything previously installed there. `pluginLockdown.enabled` (on by
+default) also blocks installing a different one from wp-admin or REST.
 
 ### Turning it on for an environment
 
 1. Deploy with `twoFactor.enabled: true` and `twoFactor.enforce: false` (the
-   current state of both `ops/*-values.yaml` files).
-2. Install and activate the plugin, in wp-admin (Plugins > Add New, search for
-   "Two Factor") or over REST:
+   current state of both `ops/*-values.yaml` files). The plugin ships in the
+   image already (see above) -- it just needs activating.
+2. Activate it over REST. Activating an already-present plugin isn't a file
+   mod, so `pluginLockdown.enabled` doesn't block it (installing one would):
    ```bash
    curl -sS -u 'notch8-admin:<application password>' \
      -H 'Content-Type: application/json' \
-     -d '{"slug": "two-factor", "status": "active"}' \
-     'https://<hostname>/?rest_route=/wp/v2/plugins'
+     -d '{"status": "active"}' \
+     'https://<hostname>/?rest_route=/wp/v2/plugins/two-factor/two-factor'
    ```
 3. Each account holder sets up an authenticator app under Users > Profile >
    Two-Factor Options and saves their backup codes. Administrators go first.
@@ -243,10 +242,11 @@ and has view-only access until they do.
   profile page. Without backup codes, another administrator can turn two-factor
   off for that account (Users > edit the user > Two-Factor Options), and the
   person re-enrolls at their next login.
-- **Plugin missing or inactive** (everyone is view-only): reinstall it with the
-  step 2 command, or if it is installed but inactive, POST
-  `{"status": "active"}` to `?rest_route=/wp/v2/plugins/two-factor/two-factor`
-  with the same `notch8-admin` application password.
+- **Plugin inactive** (everyone is view-only): activate it with the step 2
+  command.
+- **Plugin missing entirely**: redeploy. `pluginLockdown.enabled` blocks
+  installing one back from wp-admin or REST on purpose -- it's meant to come
+  from the image, not either of those.
 - **Last resort**: set `twoFactor.enforce: false` and redeploy. That lifts the
   gate without anyone needing cluster access. Set it back afterwards.
 
@@ -309,15 +309,23 @@ digest -- the same build `docker-compose.yml` uses locally and CI publishes
 to GHCR. The image tag itself is content-addressed -- `bin/image-tag` hashes
 `Dockerfile`, so a commit that doesn't touch it reuses the image already
 published for that content, and `deploy.yaml`'s `build-image` job skips
-rebuilding it. Bump the `FROM` line (and its digest) to pick up a new
-WordPress or PHP release; bump the en_GB language pack's URL/checksum at the
-same time, since it's pinned to match.
+rebuilding it. Bump `WP_VERSION` (and the `FROM` line's digest) to pick up a
+new WordPress or PHP release -- the en_GB language pack URL is derived from
+`WP_VERSION`, not a separate literal, so there's nothing else to edit there.
 
 The image also bakes in a pinned, checksum-verified copy of the Two Factor
 plugin (`TWO_FACTOR_VERSION`/`TWO_FACTOR_SHA256`) and the en_GB core language
-pack, staged where `docker-entrypoint.sh` seeds a fresh `/var/www/html` --
-see "Two-factor authentication" for why this is currently inert on staging
-and production.
+pack (`WP_LANG_EN_GB_SHA256`), staged where `docker-entrypoint.sh` seeds a
+fresh `/var/www/html`. Neither checksum is published anywhere Renovate (or a
+human bumping either version by hand) could just read -- a companion
+workflow (notch8/enact-wp#20) recomputes and commits both on any PR that
+touches `Dockerfile`.
+
+Only `wp-content/uploads` persists (`persistence` in `wordpress/values.yaml`)
+-- core, plugins, and mu-plugins all come from the image on every pod start,
+which is what makes the baked-in Two Factor plugin and `pluginLockdown.enabled`
+(see "Two-factor authentication") actually take effect, rather than being
+shadowed by whatever was previously installed on the old whole-volume mount.
 
 `mysql` is pinned the same way (`mysql.image.tag` in
 `wordpress/values.yaml`), matching what's actually running rather than the
