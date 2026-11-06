@@ -95,8 +95,10 @@ global:
 mysql:
   image:
     repository: mysql
-    tag: lts
-    pullPolicy: Always
+    # Matches what's actually running (9.7.2). Renovate's helm-values manager
+    # proposes bumps to this tag and its digest.
+    tag: "9.7.2@sha256:e2fa358a74ac81148e7e27d9433e4c0ab62133de8ea4428b4f39a51a4ba7d07f"
+    pullPolicy: IfNotPresent
   resources:
     requests:
       cpu: 250m
