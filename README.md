@@ -296,9 +296,12 @@ namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 `mysql` is pinned by tag and digest (`mysql.image.tag` in
 `wordpress/values.yaml`), not the floating `lts` tag -- matching what's
 actually running rather than the ticket-era assumption that `lts` meant 8.4;
-it's moved on to the 9.x line since. Dependabot (`.github/dependabot.yml`,
-`docker` ecosystem) opens a PR when a newer digest exists for either this or
-the (separately tracked) WordPress image's own pin.
+it's moved on to the 9.x line since. Renovate (`renovate.json`) opens a PR
+when a newer digest exists for this, GitHub Actions, or (once
+notch8/notch8-ops#634's Dockerfile work merges) the WordPress image's own
+pin and the Two Factor plugin version -- the matching checksums Renovate
+can't look up anywhere get recomputed and committed automatically by
+`.github/workflows/fix-dockerfile-checksums.yaml` (`bin/fix-dockerfile-checksums`).
 
 `wordpress` still uses the floating `latest` tag here; pinning it to a built,
 content-tagged image is tracked separately (notch8/notch8-ops#634).

@@ -1,0 +1,36 @@
+name: "Fix Dockerfile checksums"
+run-name: Fix Dockerfile checksums on ${{ github.head_ref }}
+
+# Catches both a Renovate version bump (which can't know the matching
+# checksum -- nothing publishes it) and a human typo when bumping one by
+# hand.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+
+jobs:
+  fix-checksums:
+    # Fork PRs get a read-only token and can't be pushed back to.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Recompute checksums
+        run: ./bin/fix-dockerfile-checksums
+
+      - name: Commit if anything changed
+        run: |
+          if ! git diff --quiet Dockerfile; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add Dockerfile
+            git commit -m "Recompute Dockerfile checksum(s) to match pinned version(s)"
+            git push
+          fi

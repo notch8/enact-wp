@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["github-actions", "dockerfile", "custom.regex"],
+  "schedule": ["before 9am on monday"],
+  "customDatasources": {
+    "wordpress-plugin": {
+      "defaultRegistryUrlTemplate": "https://api.wordpress.org/plugins/info/1.0/{{packageName}}.json",
+      "format": "json",
+      "transformTemplates": ["{\"releases\": [{\"version\": version}]}"]
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Tracks the Two Factor plugin version pinned in Dockerfile. The matching TWO_FACTOR_SHA256 isn't published anywhere Renovate can read -- .github/workflows/fix-dockerfile-checksums.yaml recomputes and commits it on any PR that changes this.",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": ["ARG TWO_FACTOR_VERSION=(?<currentValue>\\S+)"],
+      "datasourceTemplate": "custom.wordpress-plugin",
+      "packageNameTemplate": "two-factor",
+      "versioningTemplate": "loose"
+    }
+  ]
+}
