@@ -182,6 +182,24 @@ environment independently of anything above -- it's just a Helm value:
 That's it -- no plugin to uninstall, no file to delete. Setting
 `privateSite.enabled` back to `true` and redeploying restores the login wall.
 
+## Site hardening
+
+A one-file mu-plugin, `wordpress/files/mu-plugins/site-hardening.php`
+(controlled by the `siteHardening.enabled` value, `true` by default, mounted
+the same way as `two-factor-policy.php`), stops anonymous visitors from
+discovering account logins even once the login wall above is off:
+
+- `/wp-json/wp/v2/users` and `/wp-json/wp/v2/users/<id>` return 401 to
+  anonymous requests (logged-in requests still work -- the block editor's
+  author picker needs them).
+- `?author=<id>` and `/author/<slug>/` return 404 instead of redirecting to
+  the username's archive URL.
+- The users sitemap (`/wp-sitemap-users-1.xml`) is disabled.
+- A wrong password and an unknown username show the same wp-login error.
+- Any account whose display name still matches its login (e.g. a fresh
+  `notch8-admin` install) gets a generic display name, since bylines and
+  oEmbed expose it otherwise.
+
 ## Two-factor authentication
 
 Browser logins use two-factor authentication through the

@@ -1,0 +1,14 @@
+{{- if .Values.siteHardening.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-site-hardening
+  labels:
+    app.kubernetes.io/name: wordpress
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # Source lives in files/mu-plugins/ (not inline here) so docker-compose.yml can mount
+  # the same file for local testing.
+  site-hardening.php: |
+{{ .Files.Get "files/mu-plugins/site-hardening.php" | indent 4 }}
+{{- end }}
