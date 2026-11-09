@@ -29,16 +29,20 @@ add_filter('rest_pre_dispatch', function ($result, $server, $request) {
 
 // --- Author enumeration: ?author=N and /author/<slug>/ -----------------------
 
-// redirect_canonical() is what turns ?author=1 into a 301 to /author/<slug>/,
-// leaking the login in the Location header; it bails out immediately if the
-// query is already a 404 (`if ( is_404() ) { return; }`). Runs at priority 1,
-// ahead of redirect_canonical's default priority 10, so the 404 is set first.
+// Exits rather than just flagging is_404 and returning, because privateSite's
+// own template_redirect hook (unconditional, default priority) would otherwise
+// still run afterward and redirect to wp-login -- putting the same login right
+// back in the clear as a `redirect_to` query param. Priority 1 so this also
+// runs ahead of redirect_canonical's default priority 10, which turns
+// ?author=1 into a 301 to /author/<slug>/ unless the query is already a 404.
 add_action('template_redirect', function () {
     if (is_author() && !is_user_logged_in()) {
         global $wp_query;
         $wp_query->set_404();
         status_header(404);
         nocache_headers();
+        include get_query_template('404');
+        exit;
     }
 }, 1);
 
