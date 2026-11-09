@@ -86,7 +86,6 @@
       ]
     }
   ],
-  "testers": [],
   "cleanup": {
     "delete_page_slugs": ["sample-page"],
     "delete_post_slugs": ["hello-world"],

@@ -76,7 +76,7 @@ runtime, no third-party font CDN.
    `styles.typography.fontFamily` at the FF Real Text family preset and
    `styles.elements.heading.typography.fontFamily` at FF Real Head, keeping
    IBM Plex Sans in each family's `fontFamily` fallback stack.
-4. Re-apply: `bin/provision ... --only fonts,global-styles`.
+4. Re-apply: `bin/provision ... --only fonts,global-styles --overwrite global-styles`.
 
 Nothing in page/post content references a font family directly, so the swap is
 contained to those two files.
@@ -88,10 +88,13 @@ provision against it. Brand changes deploy with:
 
     bin/provision --base-url https://enact-wp-production.enacthyku.com \
         --user notch8-admin --app-password '...' \
-        --only media,fonts,global-styles,site-branding
+        --only media,fonts,global-styles,site-branding \
+        --overwrite global-styles,site-branding
 
 which touches media (additive), fonts, global styles, and the site icon + logo
 settings, and nothing else (no pages, posts, navigation, or other settings).
+`--overwrite` is what allows the global-styles and site-branding rewrite;
+without it they'd be skipped as already existing.
 
 The `template-parts` section is deliberately absent from that list: the
 production **footer** has been tester-owned since 20 Aug 2026 (Westminster
@@ -104,4 +107,4 @@ rather than running the whole section.
 The home hero band has two approved looks; `bin/hero-variant` switches between
 them surgically (preserving editor changes elsewhere on the page):
 
-    bin/hero-variant --base-url ... --user ... --app-password '...' --variant aqua|dark
+    bin/hero-variant --base-url ... --user ... --app-password '...' --variant aqua|dark --overwrite
