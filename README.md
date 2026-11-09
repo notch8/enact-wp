@@ -302,8 +302,10 @@ carries a `pre.hook.backup.velero.io/command` annotation
 (backed-up) data volume before each snapshot -- the leading dot keeps
 mysqld's own datadir scan from treating it as a database on restart.
 
-Restoring (tested against production 2026-11-09, pods booted with pages,
-media, and fonts intact):
+**Testing a restore without touching production** (verified 2026-11-09, pods
+booted with pages, media, and fonts intact): restore into a scratch
+namespace instead of the real one, so it can run alongside the live site
+untouched.
 
 ```
 velero restore create --from-backup <name> \
@@ -318,8 +320,22 @@ site 301/302s anything that doesn't arrive as that Host header or over
 HTTPS -- check content directly instead (`kubectl exec` into the pods, or
 `curl -H "Host: <real-hostname>"` through a port-forward).
 
-For a logical restore instead of the whole PVC,
-`gunzip -c .backup/dump.sql.gz | MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysql -uroot`.
+**Restoring production for real** is a different, higher-stakes operation,
+not just the same command without `--namespace-mappings`:
+
+- Don't exclude Ingress/Certificate this time -- you want the real site back,
+  not a copy next to it.
+- Velero skips any resource that already exists rather than overwriting it,
+  so first scale `enact-wp-production-mysql` and `-wordpress` to 0 and delete
+  the PVC(s) you're recovering (or pass `--existing-resource-policy update`)
+  -- restoring files underneath a running mysqld risks corrupting it further.
+- This means real downtime, unlike the scratch-namespace test.
+- `enact-wp` deploys via its own GitHub Actions workflow, not ArgoCD, so
+  nothing auto-syncs over a manual restore -- but avoid merging/pushing to
+  `main` mid-recovery, since a concurrent deploy would race it.
+- If only the database is affected (media/fonts are fine), restore just the
+  `mysql` PVC, or skip Velero entirely and pipe the dump back in:
+  `gunzip -c .backup/dump.sql.gz | MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysql -uroot`.
 
 **Retention:** 7 days (`daily-full-cluster`'s `ttl`) is the decided retention
 for both namespaces, same as every other namespace on that schedule --
