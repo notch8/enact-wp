@@ -291,6 +291,41 @@ namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 `terraform/modules/github-deploy-sa`).
 
 
+## Backups
+
+The `enact` cluster's `daily-full-cluster` Velero schedule fs-backs-up (kopia)
+every PVC in both namespaces nightly, 7-day retention. A raw copy of MySQL's
+data files isn't guaranteed consistent on its own, so the `mysql` deployment
+carries a `pre.hook.backup.velero.io/command` annotation
+(`wordpress/charts/mysql/templates/deployment.yaml`) that runs `mysqldump
+--single-transaction --all-databases` into `.backup/dump.sql.gz` on the same
+(backed-up) data volume before each snapshot -- the leading dot keeps
+mysqld's own datadir scan from treating it as a database on restart.
+
+Restoring (tested against production 2026-11-09, pods booted with pages,
+media, and fonts intact):
+
+```
+velero restore create --from-backup <name> \
+  --include-namespaces enact-wp-production \
+  --namespace-mappings enact-wp-production:<scratch-ns> \
+  --exclude-resources ingresses.networking.k8s.io,certificates.cert-manager.io,certificaterequests.cert-manager.io
+```
+
+Excluding Ingress/Certificate stops the restore from fighting over the real
+hostname/cert. `siteurl` in the DB still points at the real domain, so the
+site 301/302s anything that doesn't arrive as that Host header or over
+HTTPS -- check content directly instead (`kubectl exec` into the pods, or
+`curl -H "Host: <real-hostname>"` through a port-forward).
+
+For a logical restore instead of the whole PVC,
+`gunzip -c .backup/dump.sql.gz | MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysql -uroot`.
+
+**Retention:** 7 days (`daily-full-cluster`'s `ttl`) is the decided retention
+for both namespaces, same as every other namespace on that schedule --
+UoW's editors are a small group likely to notice a content problem within
+days. Revisit if that stops being true.
+
 ## Versions
 
 `mysql` is pinned by tag and digest (`mysql.image.tag` in
