@@ -286,11 +286,12 @@ and has view-only access until they do.
 ## Secrets
 
 Database credentials never touch GitHub. Each environment's `ExternalSecret`
-(`wordpress/templates/externalsecret.yaml`) pulls from a 1Password item via the
-`enact` cluster's existing `onepassword` ClusterSecretStore:
+(`wordpress/templates/externalsecret.yaml`) pulls from a 1Password item via
+its own per-vault `ClusterSecretStore` on the `enact` cluster (1Password SDK
+provider, scoped read-only to that one vault):
 
-- `wordpress-mysql-staging-enact`
-- `wordpress-mysql-production-enact`
+- `onepassword-enact-staging` -> `enact-staging` vault -> `wordpress-mysql-staging-enact`
+- `onepassword-enact-production` -> `enact-production` vault -> `wordpress-mysql-production-enact`
 
 Each item needs `root-password`, `wordpress-password`, and the eight WordPress
 auth keys/salts (`auth-key`, `secure-auth-key`, `logged-in-key`, `nonce-key`,

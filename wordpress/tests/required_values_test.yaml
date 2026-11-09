@@ -4,6 +4,7 @@ tests:
     set:
       ingress.hostname: ""
       externalSecret.onePasswordItem: test-item
+      externalSecret.storeName: test-store
     asserts:
       - failedTemplate:
           errorMessage: "ingress.hostname is required"
@@ -12,6 +13,16 @@ tests:
     set:
       ingress.hostname: example.test
       externalSecret.onePasswordItem: ""
+      externalSecret.storeName: test-store
     asserts:
       - failedTemplate:
           errorMessage: "externalSecret.onePasswordItem is required"
+
+  - it: fails to render without externalSecret.storeName
+    set:
+      ingress.hostname: example.test
+      externalSecret.onePasswordItem: test-item
+      externalSecret.storeName: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "externalSecret.storeName is required"

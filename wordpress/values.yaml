@@ -93,6 +93,8 @@ externalSecret:
   enabled: true
   refreshInterval: 1h
   onePasswordItem: "" # set per environment, e.g. wordpress-mysql-staging-enact
+  # ClusterSecretStore name, e.g. onepassword-enact-staging (SDK provider, one per vault)
+  storeName: ""
 
 # Shared between this chart and the nested mysql subchart.
 global:
