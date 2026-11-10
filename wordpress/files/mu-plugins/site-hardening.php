@@ -21,7 +21,7 @@ add_filter('rest_pre_dispatch', function ($result, $server, $request) {
     if ($result !== null || is_user_logged_in()) {
         return $result;
     }
-    if (preg_match('#^/wp/v2/users(/\d+)?$#', $request->get_route())) {
+    if (preg_match('#^/wp/v2/users(/\d+)?$#i', $request->get_route())) {
         return new WP_Error('enact_rest_users_forbidden', 'Not found.', ['status' => 401]);
     }
     return $result;
@@ -74,4 +74,19 @@ add_action('init', function () {
         }
     }
     update_option('enact_hardening_display_names_fixed', true);
+});
+
+// Covers users created or edited after the one-time fix above.
+add_filter('wp_pre_insert_user_data', function ($data, $update, $user_id, $userdata) {
+    $login = $data['user_login'] ?? $userdata['user_login'] ?? '';
+    if ($login !== '' && $data['display_name'] === $login) {
+        $data['display_name'] = 'Enact Editorial Team';
+    }
+    return $data;
+}, 10, 4);
+
+// Bylines and oEmbed's author_url link to /author/<nicename>/, and nicename is
+// usually the login. The archive 404s for anonymous visitors anyway.
+add_filter('author_link', function ($link) {
+    return is_user_logged_in() ? $link : home_url('/');
 });

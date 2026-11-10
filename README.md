@@ -200,6 +200,12 @@ discovering account logins even once the login wall above is off:
   `notch8-admin` install) gets a generic display name, since bylines and
   oEmbed expose it otherwise.
 
+`./bin/test-site-hardening` runs these checks (plus the case-insensitive REST
+route match and the author-link fix) against a local docker compose
+WordPress -- `docker compose up -d` first, then run it against the `wordpress`
+container directly (not `./bin/wp`, which runs through the `cli` service and
+doesn't have the mu-plugins mounted).
+
 ## Two-factor authentication
 
 Browser logins use two-factor authentication through the
