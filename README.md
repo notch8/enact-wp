@@ -306,6 +306,24 @@ The only thing GitHub Actions holds is `KUBECONFIG_FILE` per environment, a
 namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 `terraform/modules/github-deploy-sa`).
 
+### Before the first rollout of this PVC change
+
+Once the subPath mount lands, `/var/www/html` stops being the persisted
+volume (only `wp-content/uploads` is), so the running pod's `wp-config.php`
+-- and whatever auth keys/salts it currently has -- becomes unreachable
+after cutover. Copy the 8 keys/salts into each environment's 1Password item
+*before* rolling this out, from the pod that's about to be replaced:
+
+```
+kubectl exec -n <namespace> deploy/<release>-wordpress -- \
+  grep -E "define\( *'(AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY|AUTH_SALT|SECURE_AUTH_SALT|LOGGED_IN_SALT|NONCE_SALT)'" \
+  /var/www/html/wp-config.php
+```
+
+Also confirm nothing was installed through wp-admin that only lives on the
+old full-volume mount -- any plugin or mu-plugin added outside of this
+chart's image/ConfigMaps won't survive the cutover to an uploads-only PVC.
+
 
 ## Versions
 
