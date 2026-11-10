@@ -1,0 +1,74 @@
+suite: wordpress deployment / uploads-only persistence and plugin lockdown
+templates:
+  - templates/deployment.yaml
+  - templates/configmap-private-site.yaml
+  # referenced by deployment.yaml's checksum annotations, so they must be in
+  # this suite's render context
+  - templates/configmap-php-uploads.yaml
+  - templates/configmap-two-factor.yaml
+values:
+  - ../../ops/staging-values.yaml
+set:
+  image.tag: test
+tests:
+  - it: mounts only wp-content/uploads from the PVC, not the whole volume
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: wp-content
+            mountPath: /var/www/html/wp-content/uploads
+            subPath: wp-content/uploads
+
+  - it: sets fsGroup so www-data can write a subPath dir kubelet creates as root
+    asserts:
+      - template: templates/deployment.yaml
+        equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 33
+            fsGroupChangePolicy: OnRootMismatch
+
+  - it: sources the auth keys and salts from the shared secret, not generated values
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WORDPRESS_AUTH_KEY
+            valueFrom:
+              secretKeyRef:
+                name: wordpress-db-credentials
+                key: auth-key
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WORDPRESS_NONCE_SALT
+            valueFrom:
+              secretKeyRef:
+                name: wordpress-db-credentials
+                key: nonce-salt
+
+  - it: disables wp-admin plugin/theme install, update, and file editing by default
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: WORDPRESS_CONFIG_EXTRA
+            value: |
+              define('DISALLOW_FILE_MODS', true);
+              define('DISALLOW_FILE_EDIT', true);
+
+  - it: omits the lockdown env var when pluginLockdown.enabled is false
+    set:
+      pluginLockdown.enabled: false
+    asserts:
+      - template: templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: WORDPRESS_CONFIG_EXTRA

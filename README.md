@@ -208,20 +208,25 @@ What the policy does:
   inactive anyway, every browser session drops to view-only until it is
   restored, so a missing plugin never leaves password-only access to editing.
 
-The plugin lives in `wp-content/plugins/` on the persistent volume and updates
-in place from wp-admin, the same way WordPress core does today.
+`Dockerfile` bakes a pinned, checksum-verified copy of the plugin into the
+image (`TWO_FACTOR_VERSION`), the same way WordPress core itself ships, and
+it's authoritative: only `wp-content/uploads` is on the persistent volume
+(see "Versions"), so every pod start gets exactly this version regardless of
+anything previously installed there. `pluginLockdown.enabled` (on by
+default) also blocks installing a different one from wp-admin or REST.
 
 ### Turning it on for an environment
 
 1. Deploy with `twoFactor.enabled: true` and `twoFactor.enforce: false` (the
-   current state of both `ops/*-values.yaml` files).
-2. Install and activate the plugin, in wp-admin (Plugins > Add New, search for
-   "Two Factor") or over REST:
+   current state of both `ops/*-values.yaml` files). The plugin ships in the
+   image already (see above) -- it just needs activating.
+2. Activate it over REST. Activating an already-present plugin isn't a file
+   mod, so `pluginLockdown.enabled` doesn't block it (installing one would):
    ```bash
    curl -sS -u 'notch8-admin:<application password>' \
      -H 'Content-Type: application/json' \
-     -d '{"slug": "two-factor", "status": "active"}' \
-     'https://<hostname>/?rest_route=/wp/v2/plugins'
+     -d '{"status": "active"}' \
+     'https://<hostname>/?rest_route=/wp/v2/plugins/two-factor/two-factor'
    ```
 3. Each account holder sets up an authenticator app under Users > Profile >
    Two-Factor Options and saves their backup codes. Administrators go first.
@@ -237,10 +242,11 @@ and has view-only access until they do.
   profile page. Without backup codes, another administrator can turn two-factor
   off for that account (Users > edit the user > Two-Factor Options), and the
   person re-enrolls at their next login.
-- **Plugin missing or inactive** (everyone is view-only): reinstall it with the
-  step 2 command, or if it is installed but inactive, POST
-  `{"status": "active"}` to `?rest_route=/wp/v2/plugins/two-factor/two-factor`
-  with the same `notch8-admin` application password.
+- **Plugin inactive** (everyone is view-only): activate it with the step 2
+  command.
+- **Plugin missing entirely**: redeploy. `pluginLockdown.enabled` blocks
+  installing one back from wp-admin or REST on purpose -- it's meant to come
+  from the image, not either of those.
 - **Last resort**: set `twoFactor.enforce: false` and redeploy. That lifts the
   gate without anyone needing cluster access. Set it back afterwards.
 
@@ -280,19 +286,43 @@ and has view-only access until they do.
 ## Secrets
 
 Database credentials never touch GitHub. Each environment's `ExternalSecret`
-(`wordpress/templates/externalsecret.yaml`) pulls from a 1Password item via the
-`enact` cluster's existing `onepassword` ClusterSecretStore:
+(`wordpress/templates/externalsecret.yaml`) pulls from a 1Password item via
+its own per-vault `ClusterSecretStore` on the `enact` cluster (1Password SDK
+provider, scoped read-only to that one vault):
 
-- `wordpress-mysql-staging-enact`
-- `wordpress-mysql-production-enact`
+- `onepassword-enact-staging` -> `enact-staging` vault -> `wordpress-mysql-staging-enact`
+- `onepassword-enact-production` -> `enact-production` vault -> `wordpress-mysql-production-enact`
 
-Each item needs `root-password` and `wordpress-password` fields. The resulting
-Kubernetes Secret is mounted directly into both the WordPress and MySQL pods --
-no duplication into GitHub Actions secrets.
+Each item needs `root-password`, `wordpress-password`, and the eight WordPress
+auth keys/salts (`auth-key`, `secure-auth-key`, `logged-in-key`, `nonce-key`,
+`auth-salt`, `secure-auth-salt`, `logged-in-salt`, `nonce-salt`) -- since
+`/var/www/html` no longer persists, `wp-config.php` is regenerated on every
+pod start, and these have to come from the secret rather than
+docker-entrypoint.sh's own random defaults, or every restart logs everyone
+out. The resulting Kubernetes Secret is mounted directly into both the
+WordPress and MySQL pods -- no duplication into GitHub Actions secrets.
 
 The only thing GitHub Actions holds is `KUBECONFIG_FILE` per environment, a
 namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 `terraform/modules/github-deploy-sa`).
+
+### Before the first rollout of this PVC change
+
+Once the subPath mount lands, `/var/www/html` stops being the persisted
+volume (only `wp-content/uploads` is), so the running pod's `wp-config.php`
+-- and whatever auth keys/salts it currently has -- becomes unreachable
+after cutover. Copy the 8 keys/salts into each environment's 1Password item
+*before* rolling this out, from the pod that's about to be replaced:
+
+```
+kubectl exec -n <namespace> deploy/<release>-wordpress -- \
+  grep -E "define\( *'(AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY|AUTH_SALT|SECURE_AUTH_SALT|LOGGED_IN_SALT|NONCE_SALT)'" \
+  /var/www/html/wp-config.php
+```
+
+Also confirm nothing was installed through wp-admin that only lives on the
+old full-volume mount -- any plugin or mu-plugin added outside of this
+chart's image/ConfigMaps won't survive the cutover to an uploads-only PVC.
 
 
 ## Versions
@@ -303,8 +333,23 @@ digest -- the same build `docker-compose.yml` uses locally and CI publishes
 to GHCR. The image tag itself is content-addressed -- `bin/image-tag` hashes
 `Dockerfile`, so a commit that doesn't touch it reuses the image already
 published for that content, and `deploy.yaml`'s `build-image` job skips
-rebuilding it. Bump the `FROM` line (and its digest) to pick up a new
-WordPress or PHP release.
+rebuilding it. Bump `WP_VERSION` (and the `FROM` line's digest) to pick up a
+new WordPress or PHP release -- the en_GB language pack URL is derived from
+`WP_VERSION`, not a separate literal, so there's nothing else to edit there.
+
+The image also bakes in a pinned, checksum-verified copy of the Two Factor
+plugin (`TWO_FACTOR_VERSION`/`TWO_FACTOR_SHA256`) and the en_GB core language
+pack (`WP_LANG_EN_GB_SHA256`), staged where `docker-entrypoint.sh` seeds a
+fresh `/var/www/html`. Neither checksum is published anywhere Renovate (or a
+human bumping either version by hand) could just read --
+`.github/workflows/fix-dockerfile-checksums.yaml` recomputes and commits
+both on any PR that touches `Dockerfile`.
+
+Only `wp-content/uploads` persists (`persistence` in `wordpress/values.yaml`)
+-- core, plugins, and mu-plugins all come from the image on every pod start,
+which is what makes the baked-in Two Factor plugin and `pluginLockdown.enabled`
+(see "Two-factor authentication") actually take effect, rather than being
+shadowed by whatever was previously installed on the old whole-volume mount.
 
 `mysql` is pinned the same way (`mysql.image.tag` in
 `wordpress/values.yaml`), matching what's actually running rather than the

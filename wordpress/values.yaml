@@ -19,6 +19,9 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Backs wp-content/uploads only (media, fonts) -- core, plugins, and
+# mu-plugins all come from the image on every pod start. See
+# wordpress/templates/deployment.yaml's wp-content volumeMount.
 persistence:
   enabled: true
   storageClass: gp3
@@ -72,6 +75,15 @@ twoFactor:
   applicationPasswordUsers:
     - notch8-admin
 
+# Disables wp-admin's plugin/theme install, update, and file-editor screens.
+# Safe once core/plugins/mu-plugins all come from the image rather than
+# wp-admin (see "persistence" below) -- there'd be nothing for those screens
+# to act on that would survive a restart anyway. Recovery from a bad plugin
+# state is "redeploy the image" instead of "fix it in wp-admin"; see
+# README.md "Two-factor authentication".
+pluginLockdown:
+  enabled: true
+
 # Pulls MySQL credentials from 1Password via the enact cluster's existing
 # `onepassword` ClusterSecretStore. Populates a single Secret consumed
 # directly by both this chart's WordPress deployment and the nested mysql
@@ -81,6 +93,8 @@ externalSecret:
   enabled: true
   refreshInterval: 1h
   onePasswordItem: "" # set per environment, e.g. wordpress-mysql-staging-enact
+  # ClusterSecretStore name, e.g. onepassword-enact-staging (SDK provider, one per vault)
+  storeName: ""
 
 # Shared between this chart and the nested mysql subchart.
 global:
