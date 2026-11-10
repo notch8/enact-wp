@@ -29,7 +29,7 @@ spec:
     spec:
       containers:
         - name: wordpress
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: WORDPRESS_DB_HOST

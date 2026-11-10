@@ -28,10 +28,11 @@ site title and an admin username/password there. Save that admin login in
 
 ## Local development
 
-Mirror of the k8s deployment (same official images) via docker compose:
+Mirror of the k8s deployment via docker compose -- WordPress builds the same
+pinned `Dockerfile` CI publishes to GHCR, not a floating official image:
 
 ```bash
-docker compose up -d            # WordPress on http://localhost:8080, MySQL alongside
+docker compose up -d --build    # WordPress on http://localhost:8080, MySQL alongside
 ./bin/wp core install --url=http://localhost:8080 --title="Enact" \
     --admin_user=admin --admin_password=<pick-one> --admin_email=<you>@notch8.com --skip-email
 ./bin/wp rewrite structure '/%postname%/'
@@ -47,7 +48,7 @@ The compose file also mounts the two-factor policy mu-plugin (see "Two-factor
 authentication" below) with enforcement off and `admin` as the only login
 allowed to use application passwords. To try enforcement locally, install the
 plugin (`./bin/wp plugin install two-factor --activate`) and restart with
-`ENACT_2FA_ENFORCE=1 docker compose up -d`.
+`ENACT_2FA_ENFORCE=1 docker compose up -d --build`.
 
 ## Site content as code
 
@@ -256,7 +257,10 @@ and has view-only access until they do.
 - `bin/remote-bootstrap` -- one-time install wizard + permalinks + application
   password for a fresh remote environment.
 - `bin/wp` -- wp-cli against the local docker compose instance.
-- `docker-compose.yml` -- local development mirror of the deployment.
+- `docker-compose.yml` -- local development mirror of the deployment; also
+  what builds and pushes the image in CI (see "Versions").
+- `Dockerfile`, `bin/image-tag` -- the pinned WordPress image's build and its
+  content-addressed tag; see "Versions".
 - `bin/helm_deploy RELEASE_NAME NAMESPACE` -- thin wrapper around
   `helm upgrade --install` used by both local and CI deploys. `NAMESPACE`
   must already exist (see one-time setup below).
@@ -293,15 +297,19 @@ namespace-scoped `github-deploy` service account token (see `notch8-ops`'s
 
 ## Versions
 
-`mysql` is pinned by tag and digest (`mysql.image.tag` in
-`wordpress/values.yaml`), not the floating `lts` tag -- matching what's
-actually running rather than the ticket-era assumption that `lts` meant 8.4;
-it's moved on to the 9.x line since. Renovate (`renovate.json`) opens a PR
-when a newer digest exists for this, GitHub Actions, or (once
-notch8/notch8-ops#634's Dockerfile work merges) the WordPress image's own
-pin and the Two Factor plugin version -- the matching checksums Renovate
-can't look up anywhere get recomputed and committed automatically by
-`.github/workflows/fix-dockerfile-checksums.yaml` (`bin/fix-dockerfile-checksums`).
+WordPress runs from a pinned image, not a floating tag: `Dockerfile` builds
+`ghcr.io/notch8/enact-wp` `FROM wordpress:7.1.4-php8.3-apache`, pinned by
+digest -- the same build `docker-compose.yml` uses locally and CI publishes
+to GHCR. The image tag itself is content-addressed -- `bin/image-tag` hashes
+`Dockerfile`, so a commit that doesn't touch it reuses the image already
+published for that content, and `deploy.yaml`'s `build-image` job skips
+rebuilding it. Bump the `FROM` line (and its digest) to pick up a new
+WordPress or PHP release.
 
-`wordpress` still uses the floating `latest` tag here; pinning it to a built,
-content-tagged image is tracked separately (notch8/notch8-ops#634).
+`mysql` is pinned the same way (`mysql.image.tag` in
+`wordpress/values.yaml`), matching what's actually running rather than the
+ticket-era assumption that `lts` meant 8.4; it's moved on to the 9.x line
+since. Renovate (`renovate.json`) opens a PR when a newer digest exists for
+either image or for GitHub Actions; the matching checksums Renovate can't
+look up anywhere get recomputed and committed automatically by
+`.github/workflows/fix-dockerfile-checksums.yaml` (`bin/fix-dockerfile-checksums`).
