@@ -1,0 +1,20 @@
+suite: mysql deployment / velero backup hook
+templates:
+  - charts/mysql/templates/deployment.yaml
+values:
+  - ../../ops/staging-values.yaml
+tests:
+  - it: runs mysqldump as a Velero pre-backup hook into the data volume
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["pre.hook.backup.velero.io/container"]
+          value: mysql
+      - matchRegex:
+          path: spec.template.metadata.annotations["pre.hook.backup.velero.io/command"]
+          pattern: "MYSQL_PWD=\\$MYSQL_ROOT_PASSWORD mysqldump"
+      - matchRegex:
+          path: spec.template.metadata.annotations["pre.hook.backup.velero.io/command"]
+          pattern: "/var/lib/mysql/\\.backup/dump\\.sql\\.gz"
+      - equal:
+          path: spec.template.metadata.annotations["pre.hook.backup.velero.io/on-error"]
+          value: Fail

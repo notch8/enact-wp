@@ -18,6 +18,16 @@ spec:
       labels:
         app.kubernetes.io/name: mysql
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Velero's fs-backup only copies files on disk, so without this a backup is a
+        # live copy of InnoDB's data files -- not guaranteed consistent. Dumps into a
+        # dot-prefixed directory on the same (backed-up) data volume so mysqld's own
+        # datadir scan on restart ignores it. MYSQL_PWD (not -p) keeps the root
+        # password out of the process list.
+        pre.hook.backup.velero.io/container: mysql
+        pre.hook.backup.velero.io/command: '["/bin/bash", "-c", "set -o pipefail; mkdir -p /var/lib/mysql/.backup && MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysqldump -uroot --single-transaction --routines --events --all-databases | gzip > /var/lib/mysql/.backup/dump.sql.gz.tmp && mv /var/lib/mysql/.backup/dump.sql.gz.tmp /var/lib/mysql/.backup/dump.sql.gz"]'
+        pre.hook.backup.velero.io/timeout: 5m
+        pre.hook.backup.velero.io/on-error: Fail
     spec:
       containers:
         - name: mysql
