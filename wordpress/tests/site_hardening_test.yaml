@@ -1,0 +1,52 @@
+suite: site hardening mu-plugin
+templates:
+  - templates/deployment.yaml
+  - templates/configmap-site-hardening.yaml
+  # referenced by deployment.yaml's checksum annotations, so they must be in
+  # this suite's render context
+  - templates/configmap-private-site.yaml
+  - templates/configmap-php-uploads.yaml
+  - templates/configmap-two-factor.yaml
+values:
+  - ../../ops/production-values.yaml
+set:
+  image.tag: test
+tests:
+  - it: mounts the site-hardening mu-plugin from the chart's files/ source
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: site-hardening
+            mountPath: /var/www/html/wp-content/mu-plugins/site-hardening.php
+            subPath: site-hardening.php
+      - template: templates/configmap-site-hardening.yaml
+        matchRegex:
+          path: data["site-hardening.php"]
+          pattern: "Plugin Name: Site Hardening"
+
+  - it: mounts regardless of privateSite.enabled
+    set:
+      privateSite.enabled: false
+    asserts:
+      - template: templates/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: site-hardening
+            mountPath: /var/www/html/wp-content/mu-plugins/site-hardening.php
+            subPath: site-hardening.php
+
+  - it: omits the mu-plugin and its ConfigMap when siteHardening.enabled is false
+    set:
+      siteHardening.enabled: false
+    asserts:
+      - template: templates/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: site-hardening
+      - template: templates/configmap-site-hardening.yaml
+        hasDocuments:
+          count: 0

@@ -84,6 +84,14 @@ twoFactor:
 pluginLockdown:
   enabled: true
 
+# Stops anonymous visitors from discovering account logins (REST users
+# endpoints, author-archive enumeration, the users sitemap, wp-login error
+# messages, display names), via a must-use plugin rendered from
+# files/mu-plugins/site-hardening.php. Independent of privateSite, which
+# switches off at go-live -- see README.md.
+siteHardening:
+  enabled: true
+
 # Pulls MySQL credentials from 1Password via the enact cluster's existing
 # `onepassword` ClusterSecretStore. Populates a single Secret consumed
 # directly by both this chart's WordPress deployment and the nested mysql

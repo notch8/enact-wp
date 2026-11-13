@@ -6,6 +6,7 @@ templates:
   # this suite's render context
   - templates/configmap-private-site.yaml
   - templates/configmap-php-uploads.yaml
+  - templates/configmap-site-hardening.yaml
 values:
   - ../../ops/production-values.yaml
 set:

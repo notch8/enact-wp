@@ -6,6 +6,7 @@ templates:
   # this suite's render context
   - templates/configmap-php-uploads.yaml
   - templates/configmap-two-factor.yaml
+  - templates/configmap-site-hardening.yaml
 values:
   - ../../ops/staging-values.yaml
 set:

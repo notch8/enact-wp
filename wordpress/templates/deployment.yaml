@@ -26,6 +26,7 @@ spec:
         checksum/private-site: {{ include (print $.Template.BasePath "/configmap-private-site.yaml") . | sha256sum }}
         checksum/php-uploads: {{ include (print $.Template.BasePath "/configmap-php-uploads.yaml") . | sha256sum }}
         checksum/two-factor: {{ include (print $.Template.BasePath "/configmap-two-factor.yaml") . | sha256sum }}
+        checksum/site-hardening: {{ include (print $.Template.BasePath "/configmap-site-hardening.yaml") . | sha256sum }}
     spec:
       # On a fresh PVC (or any volume without an existing wp-content/uploads
       # directory), kubelet creates the subPath dir as root:root -- Apache
@@ -104,6 +105,11 @@ spec:
               mountPath: /var/www/html/wp-content/mu-plugins/two-factor-policy.php
               subPath: two-factor-policy.php
             {{- end }}
+            {{- if .Values.siteHardening.enabled }}
+            - name: site-hardening
+              mountPath: /var/www/html/wp-content/mu-plugins/site-hardening.php
+              subPath: site-hardening.php
+            {{- end }}
       volumes:
         - name: wp-content
           {{- if .Values.persistence.enabled }}
@@ -124,4 +130,9 @@ spec:
         - name: two-factor
           configMap:
             name: {{ .Release.Name }}-two-factor
+        {{- end }}
+        {{- if .Values.siteHardening.enabled }}
+        - name: site-hardening
+          configMap:
+            name: {{ .Release.Name }}-site-hardening
         {{- end }}
