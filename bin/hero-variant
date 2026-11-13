@@ -74,7 +74,7 @@ def main():
         print(f"home hero already in '{args.variant}' state (or markup drifted; nothing matched)")
         return
     for a in applied: print(a)
-    if not args.overwrite:
+    if args.dry_run or not args.overwrite:
         reason = "dry run" if args.dry_run else "refusing to write without --overwrite (home page may have been edited)"
         print(f"not writing: {reason}")
         return

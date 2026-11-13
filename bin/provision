@@ -283,33 +283,38 @@ def main():
         author = site["post_author"]
         users = wp.get("/wp/v2/users", {"search": author["username"], "context": "edit"})
         match = [u for u in users if u.get("username") == author["username"] or u.get("slug") == author["username"]]
-        if not match:
+        if match:
+            author_id = match[0]["id"]
+        elif dry:
+            author_id = None
+            log(f"  [dry-run] author user '{author['username']}' not found; create it in wp-admin before a real run")
+        else:
             sys.exit(f"author user '{author['username']}' not found. Users are managed in wp-admin -- "
                      f"create it there first, then re-run.")
-        author_id = match[0]["id"]
 
         for p in site["posts"]:
             content = substitute((CONTENT / p["file"]).read_text())
-            cat_id = ensure_term("/wp/v2/categories", p["category"])
-            tag_ids = [ensure_term("/wp/v2/tags", t) for t in p["tags"]]
-            body = {"title": p["title"], "slug": p["slug"], "status": "publish",
-                    "content": content, "date": p["date"], "categories": [cat_id],
-                    "tags": tag_ids, "author": author_id, "comment_status": "closed",
-                    "ping_status": "closed"}
+            def post_body():
+                return {"title": p["title"], "slug": p["slug"], "status": "publish",
+                        "content": content, "date": p["date"],
+                        "categories": [ensure_term("/wp/v2/categories", p["category"])],
+                        "tags": [ensure_term("/wp/v2/tags", t) for t in p["tags"]],
+                        "author": author_id, "comment_status": "closed",
+                        "ping_status": "closed"}
             existing = find_by_slug(wp, "/wp/v2/posts", p["slug"])
             if existing:
                 if may_overwrite("posts"):
                     if dry:
                         log(f"  [dry-run] would overwrite post {p['slug']}")
                     else:
-                        wp.post(f"/wp/v2/posts/{existing['id']}", body=body)
+                        wp.post(f"/wp/v2/posts/{existing['id']}", body=post_body())
                         log(f"  overwrote post {p['slug']} (id {existing['id']})")
                 else:
                     log(f"  post {p['slug']} exists, skipping (use --overwrite posts to update)")
             elif dry:
                 log(f"  [dry-run] would create post {p['slug']}")
             else:
-                item = wp.post("/wp/v2/posts", body=body)
+                item = wp.post("/wp/v2/posts", body=post_body())
                 log(f"  created post {p['slug']} (id {item['id']})")
 
     # --- navigation ----------------------------------------------------------
