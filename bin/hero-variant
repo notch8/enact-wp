@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Switch the home page hero band between the two brand variants.
 
-    bin/hero-variant --base-url ... --user ... --app-password '...' --variant aqua
-    bin/hero-variant --base-url ... --user ... --app-password '...' --variant dark [--dry-run]
+    bin/hero-variant --base-url ... --user ... --app-password '...' --variant aqua --overwrite
 
 Variants:
   dark  -- deep green band (palette "contrast"), white text, aqua buttons.
@@ -11,8 +10,10 @@ Variants:
 
 The edit is surgical: it fetches the page's raw content and rewrites only the
 hero group's color attributes (and the primary button under the aqua variant),
-so editor changes elsewhere on the page are preserved. --dry-run prints the
-would-be changes without writing.
+so editor changes elsewhere on the page are preserved. Safe by default: it
+always previews the change; writing it needs an explicit --overwrite, since
+the home page may have been edited since it was seeded. --dry-run is an
+explicit alias for the default preview behaviour.
 """
 import argparse, base64, json, secrets, sys, urllib.parse, urllib.request
 
@@ -38,7 +39,8 @@ def main():
     ap.add_argument("--user", required=True)
     ap.add_argument("--app-password", required=True)
     ap.add_argument("--variant", required=True, choices=["aqua", "dark"])
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--overwrite", action="store_true", help="required to actually write; default is preview only")
+    ap.add_argument("--dry-run", action="store_true", help="explicit alias for the default preview behaviour")
     args = ap.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -72,8 +74,9 @@ def main():
         print(f"home hero already in '{args.variant}' state (or markup drifted; nothing matched)")
         return
     for a in applied: print(a)
-    if args.dry_run:
-        print("dry run: not writing")
+    if args.dry_run or not args.overwrite:
+        reason = "dry run" if args.dry_run else "refusing to write without --overwrite (home page may have been edited)"
+        print(f"not writing: {reason}")
         return
     req("POST", f"/wp/v2/pages/{page['id']}", body={"content": changed})
     print(f"home hero set to '{args.variant}' ({len(applied)} edits)")

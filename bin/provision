@@ -1,39 +1,48 @@
 #!/usr/bin/env python3
 """Provision an Enact WordPress instance from content/ over the REST API.
 
-Idempotent: safe to re-run; existing items (matched by slug/filename) are
-updated in place. Works against any environment:
+Create-only by default: an item that already exists (matched by slug) is
+skipped and reported, never modified. Works against any environment:
 
     bin/provision --base-url http://localhost:8080 --user admin --app-password 'xxxx xxxx ...'
-    bin/provision --base-url https://enact-wp-production.enacthyku.com --user enact-owner \
-        --app-password '...' --testers
+
+Overwriting an existing item needs an explicit --overwrite SECTION[,SECTION],
+e.g. the brand rollout:
+
+    bin/provision --base-url ... --user ... --app-password '...' \
+        --only media,fonts,template-parts,global-styles,site-branding \
+        --overwrite template-parts,global-styles,site-branding
+
+Add --dry-run to list what would be created, overwritten, skipped or deleted
+without writing anything.
 
 Uses only the Python 3 standard library. The REST API is reached via
 ?rest_route= so it works before and after pretty permalinks are enabled.
---testers additionally creates the tester accounts listed in ENACT_TESTERS_JSON
-(same shape as site.json's old "testers" array), falling back to site.json's
-own "testers" key if that's unset. Names, emails and roles of real testers are
-identifying information this repo is public, so source it from 1Password
-rather than committing it -- see README.md "Tester accounts". Generated
-passwords print to stdout and are never stored anywhere else.
+This script never creates, modifies or deletes WordPress users -- users are
+managed in wp-admin. The post author (post_author in site.json) must already
+exist; the script looks it up and fails if it doesn't.
 
 --only SECTION[,SECTION...] applies a subset of sections instead of the whole
 seed. This is how changes are deployed to an environment where editors own the
 content: it never touches pages, posts or navigation unless asked to. Sections:
 media, fonts, pages, posts, navigation, template-parts, templates,
 global-styles, site-branding (site icon + logo only), settings, cleanup.
-Example -- apply branding without touching content:
 
-    bin/provision --base-url ... --user ... --app-password '...' \
-        --only media,fonts,template-parts,global-styles,site-branding
+--overwrite SECTION[,SECTION...] allows writes to existing items within the
+sections named (from: media, pages, posts, navigation, template-parts,
+templates, global-styles, site-branding, settings, cleanup). Sections not
+named there are create-only: existing items are left untouched and reported.
 """
-import argparse, base64, json, mimetypes, os, re, secrets, string, sys, urllib.error, urllib.parse, urllib.request
+import argparse, base64, json, mimetypes, re, secrets, sys, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 CONTENT = Path(__file__).resolve().parent.parent / "content"
 
 SECTIONS = ["media", "fonts", "pages", "posts", "navigation", "template-parts",
             "templates", "global-styles", "site-branding", "settings", "cleanup"]
+
+OVERWRITABLE = ["media", "pages", "posts", "navigation", "template-parts",
+                "templates", "global-styles", "site-branding", "settings", "cleanup"]
 
 def log(msg): print(msg, flush=True)
 
@@ -98,18 +107,16 @@ def find_by_slug(wp, route, slug, extra=None):
     items = wp.get(route, params)
     return items[0] if items else None
 
-def gen_password():
-    alphabet = string.ascii_letters + string.digits
-    return "-".join("".join(secrets.choice(alphabet) for _ in range(6)) for _ in range(4))
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", required=True)
     ap.add_argument("--user", required=True)
     ap.add_argument("--app-password", required=True)
-    ap.add_argument("--testers", action="store_true", help="also create tester accounts from site.json")
     ap.add_argument("--only", help="comma-separated subset of sections to apply: " + ",".join(SECTIONS))
+    ap.add_argument("--overwrite", help="comma-separated sections allowed to overwrite/delete existing items: " + ",".join(OVERWRITABLE))
+    ap.add_argument("--dry-run", action="store_true", help="report what would be created, overwritten, skipped or deleted, without writing")
     args = ap.parse_args()
+    dry = args.dry_run
 
     if args.only:
         selected = {s.strip() for s in args.only.split(",") if s.strip()}
@@ -124,10 +131,18 @@ def main():
         selected = set(SECTIONS) - {"site-branding"}
     def want(s): return s in selected
 
+    overwrite = set()
+    if args.overwrite:
+        overwrite = {s.strip() for s in args.overwrite.split(",") if s.strip()}
+        unknown = overwrite - set(OVERWRITABLE)
+        if unknown:
+            sys.exit(f"unknown --overwrite sections: {', '.join(sorted(unknown))}")
+    def may_overwrite(s): return s in overwrite
+
     wp = WP(args.base_url, args.user, args.app_password)
     site = json.loads((CONTENT / "site.json").read_text())
     me = wp.get("/wp/v2/users/me")
-    log(f"Authenticated as {me['name']} on {args.base_url}")
+    log(f"Authenticated as {me['name']} on {args.base_url}" + (" (dry run)" if dry else ""))
 
     # --- media -------------------------------------------------------------
     media_ids, media_urls = {}, {}
@@ -140,19 +155,31 @@ def main():
             existing = find_by_slug(wp, "/wp/v2/media", slug)
             if existing:
                 item = existing
+                if want("media"):
+                    if may_overwrite("media"):
+                        if dry:
+                            log(f"  [dry-run] would overwrite media metadata: {fname}")
+                        else:
+                            wp.post(f"/wp/v2/media/{item['id']}", body={"alt_text": m["alt"], "title": m["title"]})
+                            log(f"  overwrote media metadata: {fname}")
+                    else:
+                        log(f"  media {fname} exists, skipping (use --overwrite media to update metadata)")
             elif want("media"):
-                path = CONTENT / "media" / fname
-                ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
-                item = wp.post("/wp/v2/media", raw=path.read_bytes(), headers={
-                    "Content-Type": ctype,
-                    "Content-Disposition": f'attachment; filename="{fname}"'})
-                log(f"  uploaded {fname} (id {item['id']})")
+                if dry:
+                    log(f"  [dry-run] would upload {fname}")
+                    item = {"id": -1, "source_url": ""}
+                else:
+                    path = CONTENT / "media" / fname
+                    ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+                    item = wp.post("/wp/v2/media", raw=path.read_bytes(), headers={
+                        "Content-Type": ctype,
+                        "Content-Disposition": f'attachment; filename="{fname}"'})
+                    wp.post(f"/wp/v2/media/{item['id']}", body={"alt_text": m["alt"], "title": m["title"]})
+                    log(f"  uploaded {fname} (id {item['id']})")
             else:
                 continue  # read-only map for substitution; skip missing items
-            if want("media"):
-                wp.post(f"/wp/v2/media/{item['id']}", body={"alt_text": m["alt"], "title": m["title"]})
             media_ids[fname] = item["id"]
-            media_urls[fname] = item["source_url"]
+            media_urls[fname] = item.get("source_url", "")
         log(f"Media ready: {len(media_ids)} items")
 
     # --- fonts -------------------------------------------------------------
@@ -162,13 +189,16 @@ def main():
             existing = wp.get("/wp/v2/font-families", {"slug": fam["slug"], "per_page": 100})
             if existing:
                 fam_id = existing[0]["id"]
+            elif dry:
+                log(f"  [dry-run] would create font family {fam['slug']}")
+                fam_id = -1
             else:
                 fam_settings = json.dumps({"name": fam["name"], "slug": fam["slug"],
                                            "fontFamily": fam["fontFamily"]})
                 fam_id = wp.post_form("/wp/v2/font-families",
                                       {"font_family_settings": fam_settings})["id"]
                 log(f"  created font family {fam['slug']} (id {fam_id})")
-            faces = wp.get(f"/wp/v2/font-families/{fam_id}/font-faces", {"per_page": 100})
+            faces = wp.get(f"/wp/v2/font-families/{fam_id}/font-faces", {"per_page": 100}) if fam_id != -1 else []
             have = {}
             for f in faces:
                 s = f.get("font_face_settings", {})
@@ -177,6 +207,9 @@ def main():
                 key = (face["fontStyle"], str(face["fontWeight"]))
                 if key in have:
                     src = have[key].get("src")
+                elif dry:
+                    log(f"  [dry-run] would upload font face {face['file']}")
+                    src = ""
                 else:
                     fs = json.dumps({"fontFamily": fam["name"], "fontStyle": face["fontStyle"],
                                      "fontWeight": face["fontWeight"], "src": ["file-0"]})
@@ -209,11 +242,22 @@ def main():
             if p.get("template"): body["template"] = p["template"]
             existing = find_by_slug(wp, "/wp/v2/pages", p["slug"])
             if existing:
-                item = wp.post(f"/wp/v2/pages/{existing['id']}", body=body)
+                page_ids[p["slug"]] = existing["id"]
+                if may_overwrite("pages"):
+                    if dry:
+                        log(f"  [dry-run] would overwrite page {p['slug']}")
+                    else:
+                        wp.post(f"/wp/v2/pages/{existing['id']}", body=body)
+                        log(f"  overwrote page {p['slug']} (id {existing['id']})")
+                else:
+                    log(f"  page {p['slug']} exists, skipping (use --overwrite pages to update)")
+            elif dry:
+                log(f"  [dry-run] would create page {p['slug']}")
+                page_ids[p["slug"]] = -1
             else:
                 item = wp.post("/wp/v2/pages", body=body)
-            page_ids[p["slug"]] = item["id"]
-            log(f"  page {p['slug']} (id {item['id']})")
+                page_ids[p["slug"]] = item["id"]
+                log(f"  created page {p['slug']} (id {item['id']})")
 
     def page_id(slug):
         if slug not in page_ids:
@@ -234,35 +278,44 @@ def main():
             if m: return int(m.group(1))
             raise
 
-    # --- posts (and their author) ---------------------------------------------
+    # --- posts ---------------------------------------------------------------
     if want("posts"):
         author = site["post_author"]
         users = wp.get("/wp/v2/users", {"search": author["username"], "context": "edit"})
         match = [u for u in users if u.get("username") == author["username"] or u.get("slug") == author["username"]]
         if match:
             author_id = match[0]["id"]
+        elif dry:
+            author_id = None
+            log(f"  [dry-run] author user '{author['username']}' not found; create it in wp-admin before a real run")
         else:
-            author_id = wp.post("/wp/v2/users", body={
-                "username": author["username"], "name": author["display_name"],
-                "first_name": author["display_name"], "email": author["email"],
-                "roles": [author["role"]], "password": gen_password()})["id"]
-            log(f"  created author user {author['username']}")
-        wp.post(f"/wp/v2/users/{author_id}", body={"name": author["display_name"]})
+            sys.exit(f"author user '{author['username']}' not found. Users are managed in wp-admin -- "
+                     f"create it there first, then re-run.")
 
         for p in site["posts"]:
             content = substitute((CONTENT / p["file"]).read_text())
-            cat_id = ensure_term("/wp/v2/categories", p["category"])
-            tag_ids = [ensure_term("/wp/v2/tags", t) for t in p["tags"]]
-            body = {"title": p["title"], "slug": p["slug"], "status": "publish",
-                    "content": content, "date": p["date"], "categories": [cat_id],
-                    "tags": tag_ids, "author": author_id, "comment_status": "closed",
-                    "ping_status": "closed"}
+            def post_body():
+                return {"title": p["title"], "slug": p["slug"], "status": "publish",
+                        "content": content, "date": p["date"],
+                        "categories": [ensure_term("/wp/v2/categories", p["category"])],
+                        "tags": [ensure_term("/wp/v2/tags", t) for t in p["tags"]],
+                        "author": author_id, "comment_status": "closed",
+                        "ping_status": "closed"}
             existing = find_by_slug(wp, "/wp/v2/posts", p["slug"])
             if existing:
-                item = wp.post(f"/wp/v2/posts/{existing['id']}", body=body)
+                if may_overwrite("posts"):
+                    if dry:
+                        log(f"  [dry-run] would overwrite post {p['slug']}")
+                    else:
+                        wp.post(f"/wp/v2/posts/{existing['id']}", body=post_body())
+                        log(f"  overwrote post {p['slug']} (id {existing['id']})")
+                else:
+                    log(f"  post {p['slug']} exists, skipping (use --overwrite posts to update)")
+            elif dry:
+                log(f"  [dry-run] would create post {p['slug']}")
             else:
-                item = wp.post("/wp/v2/posts", body=body)
-            log(f"  post {p['slug']} (id {item['id']})")
+                item = wp.post("/wp/v2/posts", body=post_body())
+                log(f"  created post {p['slug']} (id {item['id']})")
 
     # --- navigation ----------------------------------------------------------
     if want("navigation"):
@@ -285,14 +338,29 @@ def main():
         nav_body = {"title": "Main Navigation", "slug": "main-navigation",
                     "status": "publish", "content": nav_markup}
         if existing:
-            wp.post(f"/wp/v2/navigation/{existing['id']}", body=nav_body)
+            if may_overwrite("navigation"):
+                if dry:
+                    log("  [dry-run] would overwrite navigation")
+                else:
+                    wp.post(f"/wp/v2/navigation/{existing['id']}", body=nav_body)
+                    log("Navigation overwritten")
+            else:
+                log("  navigation exists, skipping (use --overwrite navigation to update)")
+        elif dry:
+            log("  [dry-run] would create navigation")
         else:
             wp.post("/wp/v2/navigation", body=nav_body)
-        log("Navigation ready")
+            log("Navigation created")
 
     # --- template parts --------------------------------------------------------
     if want("template-parts"):
         for part, fname in site.get("template_parts", {}).items():
+            if not may_overwrite("template-parts"):
+                log(f"  template part {part} exists, skipping (use --overwrite template-parts to update)")
+                continue
+            if dry:
+                log(f"  [dry-run] would overwrite template part {part}")
+                continue
             content = substitute((CONTENT / fname).read_text())
             theme = wp.get("/wp/v2/themes", {"status": "active"})[0]["stylesheet"]
             part_id = f"{theme}//{part}"
@@ -302,6 +370,12 @@ def main():
     # --- templates ---------------------------------------------------------------
     if want("templates"):
         for tpl, fname in site.get("templates", {}).items():
+            if not may_overwrite("templates"):
+                log(f"  template {tpl} exists, skipping (use --overwrite templates to update)")
+                continue
+            if dry:
+                log(f"  [dry-run] would overwrite template {tpl}")
+                continue
             content = substitute((CONTENT / fname).read_text())
             theme = wp.get("/wp/v2/themes", {"status": "active"})[0]["stylesheet"]
             tpl_id = f"{theme}//{tpl}"
@@ -312,76 +386,86 @@ def main():
     if want("global-styles"):
         gs_file = site.get("global_styles")
         if gs_file:
-            theme = wp.get("/wp/v2/themes", {"status": "active"})[0]
-            href = theme["_links"]["wp:user-global-styles"][0]["href"]
-            gs_id = href.rstrip("/").split("/")[-1]
-            gs = json.loads(substitute((CONTENT / gs_file).read_text()))
-            wp.post(f"/wp/v2/global-styles/{gs_id}", body=gs)
-            log("Global styles applied")
+            if not may_overwrite("global-styles"):
+                log("  global styles exist, skipping (use --overwrite global-styles to update)")
+            elif dry:
+                log("  [dry-run] would overwrite global styles")
+            else:
+                theme = wp.get("/wp/v2/themes", {"status": "active"})[0]
+                href = theme["_links"]["wp:user-global-styles"][0]["href"]
+                gs_id = href.rstrip("/").split("/")[-1]
+                gs = json.loads(substitute((CONTENT / gs_file).read_text()))
+                wp.post(f"/wp/v2/global-styles/{gs_id}", body=gs)
+                log("Global styles applied")
 
     # --- site branding (icon + logo only, without the rest of settings) ---------
     if want("site-branding") and not want("settings"):
-        body = {}
-        if site.get("site_icon_media"): body["site_icon"] = media_ids[site["site_icon_media"]]
-        if site.get("site_logo_media"): body["site_logo"] = media_ids[site["site_logo_media"]]
-        if body:
-            wp.post("/wp/v2/settings", body=body)
-            log("Site branding (icon/logo) applied")
+        if not (may_overwrite("site-branding") or may_overwrite("settings")):
+            log("  site branding exists, skipping (use --overwrite site-branding to update)")
+        else:
+            body = {}
+            if site.get("site_icon_media"): body["site_icon"] = media_ids[site["site_icon_media"]]
+            if site.get("site_logo_media"): body["site_logo"] = media_ids[site["site_logo_media"]]
+            if body:
+                if dry:
+                    log("  [dry-run] would overwrite site branding (icon/logo)")
+                else:
+                    wp.post("/wp/v2/settings", body=body)
+                    log("Site branding (icon/logo) applied")
 
     # --- settings ------------------------------------------------------------
     if want("settings"):
-        settings = dict(site["settings"])
-        settings["show_on_front"] = "page"
-        settings["page_on_front"] = page_id(site["front_page"])
-        settings["page_for_posts"] = page_id(site["posts_page"])
-        icon = site.get("site_icon_media")
-        if icon: settings["site_icon"] = media_ids[icon]
-        logo = site.get("site_logo_media")
-        if logo: settings["site_logo"] = media_ids[logo]
-        wp.post("/wp/v2/settings", body=settings)
-        log("Settings applied")
+        if not may_overwrite("settings"):
+            log("  settings exist, skipping (use --overwrite settings to update)")
+        else:
+            settings = dict(site["settings"])
+            settings["show_on_front"] = "page"
+            settings["page_on_front"] = page_id(site["front_page"])
+            settings["page_for_posts"] = page_id(site["posts_page"])
+            icon = site.get("site_icon_media")
+            if icon: settings["site_icon"] = media_ids[icon]
+            logo = site.get("site_logo_media")
+            if logo: settings["site_logo"] = media_ids[logo]
+            if dry:
+                log("  [dry-run] would overwrite settings")
+            else:
+                wp.post("/wp/v2/settings", body=settings)
+                log("Settings applied")
 
     # --- cleanup ---------------------------------------------------------------
     if want("cleanup"):
-        cl = site.get("cleanup", {})
-        for slug in cl.get("delete_page_slugs", []):
-            it = find_by_slug(wp, "/wp/v2/pages", slug)
-            if it and it["id"] not in page_ids.values():
-                wp.delete(f"/wp/v2/pages/{it['id']}", {"force": "true"}); log(f"  deleted page {slug}")
-        for slug in cl.get("delete_post_slugs", []):
-            it = find_by_slug(wp, "/wp/v2/posts", slug)
-            if it:
-                wp.delete(f"/wp/v2/posts/{it['id']}", {"force": "true"}); log(f"  deleted post {slug}")
-        try:
-            plugins = wp.get("/wp/v2/plugins")
-            for target in cl.get("delete_plugins", []):
-                for pl in plugins:
-                    if pl["plugin"] == target and pl["status"] == "inactive":
-                        wp.delete(f"/wp/v2/plugins/{target}")
-                        log(f"  deleted plugin {target}")
-        except RuntimeError as e:
-            log(f"  plugin cleanup skipped: {e}")
-
-    # --- testers ---------------------------------------------------------------
-    if args.testers:
-        testers_json = os.environ.get("ENACT_TESTERS_JSON")
-        testers = json.loads(testers_json) if testers_json else site.get("testers", [])
-        log("Tester accounts:")
-        for t in testers:
-            existing = wp.get("/wp/v2/users", {"search": t["username"], "context": "edit"})
-            match = [u for u in existing if u.get("username") == t["username"] or u.get("slug") == t["username"]]
-            pw = gen_password()
+        if not may_overwrite("cleanup"):
+            log("  cleanup skipped (use --overwrite cleanup to delete listed pages/posts/plugins)")
+        else:
+            cl = site.get("cleanup", {})
+            for slug in cl.get("delete_page_slugs", []):
+                it = find_by_slug(wp, "/wp/v2/pages", slug)
+                if it and it["id"] not in page_ids.values():
+                    if dry:
+                        log(f"  [dry-run] would delete page {slug}")
+                    else:
+                        wp.delete(f"/wp/v2/pages/{it['id']}", {"force": "true"}); log(f"  deleted page {slug}")
+            for slug in cl.get("delete_post_slugs", []):
+                it = find_by_slug(wp, "/wp/v2/posts", slug)
+                if it:
+                    if dry:
+                        log(f"  [dry-run] would delete post {slug}")
+                    else:
+                        wp.delete(f"/wp/v2/posts/{it['id']}", {"force": "true"}); log(f"  deleted post {slug}")
             try:
-                if match:
-                    wp.post(f"/wp/v2/users/{match[0]['id']}", body={"password": pw, "roles": [t["role"]], "name": t["display_name"]})
-                else:
-                    wp.post("/wp/v2/users", body={"username": t["username"], "name": t["display_name"],
-                            "email": t["email"], "roles": [t["role"]], "password": pw})
-                log(f"  {t['username']} ({t['role']}): {pw}")
+                plugins = wp.get("/wp/v2/plugins")
+                for target in cl.get("delete_plugins", []):
+                    for pl in plugins:
+                        if pl["plugin"] == target and pl["status"] == "inactive":
+                            if dry:
+                                log(f"  [dry-run] would delete plugin {target}")
+                            else:
+                                wp.delete(f"/wp/v2/plugins/{target}")
+                                log(f"  deleted plugin {target}")
             except RuntimeError as e:
-                log(f"  {t['username']} FAILED: {e}")
+                log(f"  plugin cleanup skipped: {e}")
 
-    log("Provisioning complete.")
+    log("Dry run complete, nothing written." if dry else "Provisioning complete.")
 
 if __name__ == "__main__":
     main()

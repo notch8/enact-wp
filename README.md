@@ -36,8 +36,10 @@ docker compose up -d --build    # WordPress on http://localhost:8080, MySQL alon
 ./bin/wp core install --url=http://localhost:8080 --title="Enact" \
     --admin_user=admin --admin_password=<pick-one> --admin_email=<you>@notch8.com --skip-email
 ./bin/wp rewrite structure '/%postname%/'
+./bin/wp user create enact-team nick+enact-team@notch8.com --role=author --display_name="Enact Team"
 ./bin/wp user application-password create admin local --porcelain   # feed to bin/provision
-./bin/provision --base-url http://localhost:8080 --user admin --app-password '<from above>'
+./bin/provision --base-url http://localhost:8080 --user admin --app-password '<from above>' \
+    --overwrite template-parts,templates,global-styles,settings,site-branding,cleanup
 ```
 
 `./bin/wp <anything>` runs wp-cli against the local instance. The compose file
@@ -52,48 +54,38 @@ plugin (`./bin/wp plugin install two-factor --activate`) and restart with
 
 ## Site content as code
 
-The `content/` directory is the seed for the whole site: block-markup HTML for
-every page and post, curated media (with alt text), self-hosted web fonts, the
-navigation tree, header/footer and news-listing template overrides, global
-styles, and site settings, all declared in `content/site.json`. `bin/provision`
-applies it over the WordPress REST API and is idempotent: items are matched by
-slug and updated in place, so it can be re-run after content edits without
-duplicating anything.
+The `content/` directory is the seed for a *new* environment: block-markup
+HTML for every page and post, curated media (with alt text), self-hosted web
+fonts, the navigation tree, header/footer and news-listing template
+overrides, global styles, and site settings, all declared in
+`content/site.json`. `bin/provision` applies it over the WordPress REST API
+and is create-only: an item that already exists (matched by slug) is skipped
+and reported, never modified, so it's safe to re-run against an environment
+editors already own.
 
-`bin/provision --only SECTION[,SECTION...]` applies a subset of the seed
-(sections: media, fonts, pages, posts, navigation, template-parts, templates,
-global-styles, site-branding, settings, cleanup). This is how changes reach an
-environment where editors already own the content — e.g. the brand rollout is
-`--only media,fonts,template-parts,global-styles,site-branding`, which never
-touches pages, posts or navigation. See `docs/branding.md` for the brand
-implementation (palette, logo renders, IBM Plex Sans with the FF Real swap
-plan) and `bin/hero-variant` for the two approved home-hero looks.
-
-Two provisioning caveats. First, it is a seed, not a sync: once real editors
-own the site in wp-admin, re-running `bin/provision` will overwrite their
-versions of anything it manages, so from that point treat `content/` as the
-record of how the site was born, not as the source of truth. Second, it never
-touches credentials: passwords printed by the scripts go to 1Password and
-nowhere else.
-
-### Tester accounts
-
-`site.json`'s `testers` array stays empty in git -- this repo is public, and a
-real tester's name, email and role is identifying information a committed file
-would disclose permanently, same reasoning as never committing credentials.
-`bin/provision --testers` reads `ENACT_TESTERS_JSON` instead, an env var
-holding the same array shape (`[{"username", "display_name", "role",
-"email"}, ...]`), falling back to `site.json` only if it's unset:
+Overwriting an existing item needs an explicit `--overwrite
+SECTION[,SECTION...]` (sections: media, pages, posts, navigation,
+template-parts, templates, global-styles, site-branding, settings, cleanup).
+`bin/provision --only SECTION[,SECTION...]` separately limits which sections
+run at all (same section list, plus `fonts`) -- e.g. the brand rollout is:
 
 ```bash
-ENACT_TESTERS_JSON=$(op read "op://enact-production/enact-wp-testers/testers") \
-  bin/provision --base-url https://enact-wp-production.enacthyku.com \
-  --user notch8-admin --app-password '...' --testers
+bin/provision --base-url ... --user ... --app-password '...' \
+    --only media,fonts,template-parts,global-styles,site-branding \
+    --overwrite template-parts,global-styles,site-branding
 ```
 
-Store the array as a single JSON-text field on a 1Password item (e.g.
-`enact-wp-testers` in the environment's vault) rather than individual fields,
-so it round-trips through `op read` as-is.
+which never touches pages, posts or navigation. Add `--dry-run` to either form
+to list what would be created, overwritten, skipped or deleted without
+writing anything. See `docs/branding.md` for the brand implementation
+(palette, logo renders, IBM Plex Sans with the FF Real swap plan) and
+`bin/hero-variant` for the two approved home-hero looks -- it follows the
+same rule, refusing to write the home page without its own `--overwrite`.
+
+`content/` is the record of how the site was born, not an ongoing source of
+truth: once real editors own the site in wp-admin, treat it that way. Neither
+script creates, modifies or deletes WordPress users; accounts (including the
+post author in `content/site.json`) are managed in wp-admin.
 
 ## Bootstrapping a new environment
 
@@ -105,13 +97,19 @@ bin/remote-bootstrap --base-url https://enact-wp-production.enacthyku.com \
     --title Enact --admin-user notch8-admin --admin-email nick@notch8.com
 # prints the generated admin password and a REST application password
 bin/provision --base-url https://enact-wp-production.enacthyku.com \
-    --user notch8-admin --app-password '<printed above>' --testers
+    --user notch8-admin --app-password '<printed above>' \
+    --overwrite template-parts,templates,global-styles,settings,site-branding,cleanup
 ```
 
 `remote-bootstrap` runs the install wizard, sets pretty permalinks, and mints
-an application password. `--testers` also creates the reviewer accounts listed
-in `content/site.json` with fresh random passwords printed to stdout. Save
-everything printed in 1Password immediately; nothing is stored.
+an application password. Before running `bin/provision`, create the post
+author account (`post_author` in `content/site.json`) in wp-admin -- the
+script looks it up and refuses to create one. The `--overwrite` list above is
+needed even on a brand-new install: WordPress ships its own default
+templates, template parts, global styles and settings, so those sections
+already "exist" and are create-only skipped otherwise; pages, posts,
+navigation and media are genuinely new on a fresh site and don't need it.
+Save everything printed in 1Password immediately; nothing is stored.
 
 ## Pipeline
 
